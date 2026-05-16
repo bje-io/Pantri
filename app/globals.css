@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Pantri design tokens */
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-playfair);
+  --font-serif: var(--font-playfair);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Light mode — cream + deep green + terracotta */
+  --color-background: oklch(0.972 0.013 80);
+  --color-foreground: oklch(0.18 0.04 150);
+  --color-card: oklch(0.99 0.006 80);
+  --color-card-foreground: oklch(0.18 0.04 150);
+  --color-popover: oklch(0.99 0.006 80);
+  --color-popover-foreground: oklch(0.18 0.04 150);
+  --color-primary: oklch(0.35 0.1 145);
+  --color-primary-foreground: oklch(0.97 0.012 80);
+  --color-secondary: oklch(0.92 0.03 130);
+  --color-secondary-foreground: oklch(0.28 0.08 145);
+  --color-muted: oklch(0.94 0.018 100);
+  --color-muted-foreground: oklch(0.48 0.04 145);
+  --color-accent: oklch(0.62 0.14 42);
+  --color-accent-foreground: oklch(0.99 0.006 80);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-border: oklch(0.88 0.025 100);
+  --color-input: oklch(0.88 0.025 100);
+  --color-ring: oklch(0.35 0.1 145);
+
+  /* Pantri brand colors */
+  --color-pantri-cream: #FAF6F1;
+  --color-pantri-green: #2D5016;
+  --color-pantri-green-light: #EDF2E8;
+  --color-pantri-green-dark: #1A3A0A;
+  --color-pantri-terracotta: #C4622D;
+  --color-pantri-terracotta-light: #F4E8DF;
+
+  --color-chart-1: oklch(0.35 0.1 145);
+  --color-chart-2: oklch(0.62 0.14 42);
+  --color-chart-3: oklch(0.55 0.08 145);
+  --color-chart-4: oklch(0.75 0.1 80);
+  --color-chart-5: oklch(0.45 0.12 30);
+
+  --color-sidebar: oklch(0.96 0.018 100);
+  --color-sidebar-foreground: oklch(0.18 0.04 150);
+  --color-sidebar-primary: oklch(0.35 0.1 145);
+  --color-sidebar-primary-foreground: oklch(0.97 0.012 80);
+  --color-sidebar-accent: oklch(0.92 0.03 130);
+  --color-sidebar-accent-foreground: oklch(0.28 0.08 145);
+  --color-sidebar-border: oklch(0.88 0.025 100);
+  --color-sidebar-ring: oklch(0.35 0.1 145);
+}
+
+.dark {
+  --color-background: oklch(0.14 0.025 150);
+  --color-foreground: oklch(0.96 0.012 80);
+  --color-card: oklch(0.19 0.03 150);
+  --color-card-foreground: oklch(0.96 0.012 80);
+  --color-popover: oklch(0.19 0.03 150);
+  --color-popover-foreground: oklch(0.96 0.012 80);
+  --color-primary: oklch(0.62 0.12 145);
+  --color-primary-foreground: oklch(0.14 0.025 150);
+  --color-secondary: oklch(0.25 0.05 145);
+  --color-secondary-foreground: oklch(0.88 0.025 100);
+  --color-muted: oklch(0.22 0.04 150);
+  --color-muted-foreground: oklch(0.65 0.04 130);
+  --color-accent: oklch(0.68 0.14 42);
+  --color-accent-foreground: oklch(0.14 0.025 150);
+  --color-destructive: oklch(0.704 0.191 22.216);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-input: oklch(1 0 0 / 15%);
+  --color-ring: oklch(0.62 0.12 145);
+
+  --color-sidebar: oklch(0.19 0.03 150);
+  --color-sidebar-foreground: oklch(0.96 0.012 80);
+  --color-sidebar-primary: oklch(0.62 0.12 145);
+  --color-sidebar-primary-foreground: oklch(0.14 0.025 150);
+  --color-sidebar-accent: oklch(0.25 0.05 145);
+  --color-sidebar-accent-foreground: oklch(0.88 0.025 100);
+  --color-sidebar-border: oklch(1 0 0 / 10%);
+  --color-sidebar-ring: oklch(0.62 0.12 145);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
