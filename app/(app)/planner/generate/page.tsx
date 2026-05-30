@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { saveCustomRecipe } from "@/lib/local-store";
 
 const EXAMPLE_PROMPTS = [
   "High protein week, no red meat, mix of Asian cuisines",
@@ -63,6 +64,7 @@ export default function GeneratePage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [recipe, setRecipe] = useState<SingleRecipe | null>(null);
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
+  const [savedToRecipes, setSavedToRecipes] = useState(false);
 
   async function handleGenerate() {
     if (!prompt.trim()) return;
@@ -70,6 +72,7 @@ export default function GeneratePage() {
     setErrorMsg("");
     setRecipe(null);
     setWeekPlan(null);
+    setSavedToRecipes(false);
 
     try {
       const res = await fetch("/api/generate", {
@@ -91,7 +94,29 @@ export default function GeneratePage() {
       }
 
       if (mode === "single") {
-        setRecipe(data.recipe);
+        const r: SingleRecipe = data.recipe;
+        setRecipe(r);
+        // Auto-save to custom recipes so it appears in the Recipes page
+        saveCustomRecipe({
+          id: `sage-${Date.now()}`,
+          title: r.name,
+          cuisine: r.cuisine,
+          mealType: [],
+          cookTime: r.cookTime,
+          prepTime: 0,
+          servings: r.servings,
+          macros: {
+            calories: r.calories,
+            protein: r.protein,
+            carbs: r.carbs,
+            fat: r.fat,
+          },
+          ingredients: r.ingredients.map((ing) => ({ amount: "", item: ing })),
+          steps: r.instructions,
+          tags: [...(r.tags ?? []), "Sage"],
+          source: "ai",
+        });
+        setSavedToRecipes(true);
       } else {
         setWeekPlan(data.plan);
       }
@@ -112,6 +137,7 @@ export default function GeneratePage() {
     setRecipe(null);
     setWeekPlan(null);
     setErrorMsg("");
+    setSavedToRecipes(false);
   }
 
   const totalMacros = recipe
@@ -325,7 +351,7 @@ export default function GeneratePage() {
           </div>
 
           {/* Actions */}
-          <div className="flex flex-wrap gap-3 mt-4">
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <Link
               href="/planner"
               className={cn(
@@ -343,6 +369,14 @@ export default function GeneratePage() {
             >
               ✨ Generate Another
             </button>
+            {savedToRecipes && (
+              <Link
+                href="/recipes"
+                className="inline-flex items-center gap-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium px-3 py-1.5 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+              >
+                ✓ Saved to your recipes →
+              </Link>
+            )}
           </div>
         </div>
       )}
