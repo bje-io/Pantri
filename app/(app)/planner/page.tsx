@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   WEEK_DAYS,
   buildDefaultWeekPlan,
@@ -43,6 +42,217 @@ const MEAL_LABELS: { type: MealType; emoji: string; label: string }[] = [
   { type: "dinner", emoji: "🌙", label: "Dinner" },
 ];
 
+// ── AI result type ────────────────────────────────────────────────
+
+type AIRecipeResult = {
+  name: string;
+  description: string;
+  cuisine: string;
+  cookTime: number;
+  servings: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  tags: string[];
+  ingredients: string[];
+  instructions: string[];
+};
+
+function convertAIToRecipe(gen: AIRecipeResult, mealType: MealType): Recipe {
+  return {
+    id: `ai-${Date.now()}`,
+    title: gen.name,
+    cuisine: gen.cuisine,
+    mealType: [mealType],
+    cookTime: gen.cookTime,
+    prepTime: 0,
+    servings: gen.servings,
+    macros: {
+      calories: gen.calories,
+      protein: gen.protein,
+      carbs: gen.carbs,
+      fat: gen.fat,
+    },
+    ingredients: gen.ingredients.map((ing) => ({ amount: "", item: ing })),
+    steps: gen.instructions,
+    tags: gen.tags,
+    source: "ai",
+  };
+}
+
+// ── Picker state type ─────────────────────────────────────────────
+
+type PickerTarget = {
+  dayIndex: number;
+  mealType: MealType;
+};
+
+// ── Recipe Preview Modal ──────────────────────────────────────────
+
+function RecipePreviewModal({
+  recipe,
+  isRegenerating,
+  onClose,
+  onSwap,
+  onRegenerate,
+}: {
+  recipe: Recipe;
+  isRegenerating: boolean;
+  onClose: () => void;
+  onSwap: () => void;
+  onRegenerate: () => void;
+}) {
+  const total = recipe.macros.protein + recipe.macros.carbs + recipe.macros.fat;
+  const totalTime = recipe.prepTime + recipe.cookTime;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card border border-border rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 border-b border-border shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h2 className="font-serif text-xl font-bold text-foreground leading-tight">
+                {recipe.title}
+              </h2>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-muted-foreground">
+                <span>{recipe.cuisine}</span>
+                {totalTime > 0 && <span>· ⏱️ {totalTime}m</span>}
+                <span>· 👥 {recipe.servings} servings</span>
+                <span>· 🔥 {recipe.macros.calories} cal</span>
+              </div>
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {recipe.source === "ai" && (
+                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                    ✨ Sage
+                  </span>
+                )}
+                {recipe.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="h-8 w-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-muted-foreground shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Macros bar */}
+          {total > 0 && (
+            <div className="mt-3">
+              <div className="flex rounded-full overflow-hidden h-1.5 mb-2">
+                <div
+                  className="bg-primary"
+                  style={{ width: `${(recipe.macros.protein / total) * 100}%` }}
+                />
+                <div
+                  className="bg-accent"
+                  style={{ width: `${(recipe.macros.carbs / total) * 100}%` }}
+                />
+                <div
+                  className="bg-yellow-400"
+                  style={{ width: `${(recipe.macros.fat / total) * 100}%` }}
+                />
+              </div>
+              <div className="flex gap-4 text-[10px] text-muted-foreground">
+                <span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary mr-1" />
+                  Protein {recipe.macros.protein}g
+                </span>
+                <span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent mr-1" />
+                  Carbs {recipe.macros.carbs}g
+                </span>
+                <span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 mr-1" />
+                  Fat {recipe.macros.fat}g
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+          {recipe.ingredients.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-2">Ingredients</p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {recipe.ingredients.map((ing, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                    <span className="text-primary mt-0.5 shrink-0">•</span>
+                    <span>
+                      {ing.amount ? `${ing.amount} ${ing.item}` : ing.item}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {recipe.steps.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-2">Instructions</p>
+              <ol className="space-y-3">
+                {recipe.steps.map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm">
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span className="text-muted-foreground">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border shrink-0 flex gap-2">
+          <button
+            onClick={() => { onRegenerate(); onClose(); }}
+            disabled={isRegenerating}
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "flex-1 justify-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-60"
+            )}
+          >
+            {isRegenerating ? (
+              <><span className="animate-spin inline-block">⟳</span> Generating...</>
+            ) : (
+              "✨ Regenerate"
+            )}
+          </button>
+          <button
+            onClick={onSwap}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "flex-1 justify-center"
+            )}
+          >
+            ↔ Swap recipe
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Recipe Picker Modal ───────────────────────────────────────────
 
 function RecipePickerModal({
@@ -63,15 +273,15 @@ function RecipePickerModal({
   const [search, setSearch] = useState("");
 
   const pool = ALL_RECIPES.filter((r) => {
-    // Cheat day slots show cheat recipes + all types; normal slots hide cheat-only
     if (isCheatDay) return true;
     if (r.isCheatDay) return false;
     return r.mealType.includes(mealType);
   });
 
-  const filtered = pool.filter((r) =>
-    r.title.toLowerCase().includes(search.toLowerCase()) ||
-    r.cuisine.toLowerCase().includes(search.toLowerCase())
+  const filtered = pool.filter(
+    (r) =>
+      r.title.toLowerCase().includes(search.toLowerCase()) ||
+      r.cuisine.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -83,7 +293,6 @@ function RecipePickerModal({
         className="bg-card border border-border rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border shrink-0">
           <div>
             <h2 className="font-serif text-lg font-bold text-foreground">
@@ -101,7 +310,6 @@ function RecipePickerModal({
           </button>
         </div>
 
-        {/* Search */}
         <div className="px-5 py-3 border-b border-border shrink-0">
           <input
             autoFocus
@@ -113,9 +321,7 @@ function RecipePickerModal({
           />
         </div>
 
-        {/* Recipe list */}
         <div className="overflow-y-auto flex-1 p-3 space-y-2">
-          {/* Remove option if slot is filled */}
           {currentRecipe && (
             <button
               onClick={onRemove}
@@ -168,7 +374,9 @@ function RecipePickerModal({
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-foreground">{recipe.macros.calories}</p>
+                  <p className="text-sm font-bold text-foreground">
+                    {recipe.macros.calories}
+                  </p>
                   <p className="text-[10px] text-muted-foreground">cal</p>
                 </div>
               </button>
@@ -176,7 +384,6 @@ function RecipePickerModal({
           })}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3 border-t border-border shrink-0">
           <Link
             href="/planner/generate"
@@ -186,7 +393,7 @@ function RecipePickerModal({
             )}
             onClick={onClose}
           >
-            ✨ Generate a new recipe with AI
+            ✨ Generate a new recipe with Sage
           </Link>
         </div>
       </div>
@@ -194,78 +401,147 @@ function RecipePickerModal({
   );
 }
 
-// ── Mini meal slot card ───────────────────────────────────────────
+// ── Meal Slot Card ────────────────────────────────────────────────
 
 function MealSlotCard({
   recipe,
   mealType,
   isCheatDay,
+  isRegenerating,
   onOpen,
+  onPreview,
+  onRegenerate,
 }: {
   recipe: Recipe | null;
   mealType: MealType;
   isCheatDay: boolean;
+  isRegenerating: boolean;
   onOpen: () => void;
+  onPreview: (recipe: Recipe) => void;
+  onRegenerate: () => void;
 }) {
-  if (!recipe) {
+  if (isRegenerating) {
     return (
-      <button
-        onClick={onOpen}
+      <div
         className={cn(
-          "w-full h-full min-h-[84px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground group",
+          "w-full min-h-[84px] rounded-xl border flex flex-col items-center justify-center gap-1.5 animate-pulse",
           isCheatDay
-            ? "border-accent/30 hover:border-accent/60 hover:bg-accent/5"
-            : "border-border hover:border-primary/40 hover:bg-primary/5"
+            ? "border-accent/30 bg-accent/5"
+            : "border-primary/20 bg-primary/5"
         )}
       >
-        <span className={cn("text-xl transition-transform group-hover:scale-110", isCheatDay ? "text-accent/70" : "")}>
-          {isCheatDay ? "🍕" : "+"}
+        <span className="text-lg animate-spin inline-block">✨</span>
+        <span className="text-[10px] text-muted-foreground font-medium">
+          Sage is cooking…
         </span>
-        <span className="text-[10px] font-medium">
-          {isCheatDay ? "Cheat meal" : "Add meal"}
-        </span>
-      </button>
+      </div>
+    );
+  }
+
+  if (!recipe) {
+    return (
+      <div className="relative w-full min-h-[84px]">
+        <button
+          onClick={onOpen}
+          className={cn(
+            "w-full h-full min-h-[84px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground group",
+            isCheatDay
+              ? "border-accent/30 hover:border-accent/60 hover:bg-accent/5"
+              : "border-border hover:border-primary/40 hover:bg-primary/5"
+          )}
+        >
+          <span
+            className={cn(
+              "text-xl transition-transform group-hover:scale-110",
+              isCheatDay ? "text-accent/70" : ""
+            )}
+          >
+            {isCheatDay ? "🍕" : "+"}
+          </span>
+          <span className="text-[10px] font-medium">
+            {isCheatDay ? "Cheat meal" : "Add meal"}
+          </span>
+        </button>
+        {/* Regenerate with Sage for empty slot */}
+        <button
+          onClick={onRegenerate}
+          title="Generate with Sage"
+          className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 flex items-center justify-center text-[11px] transition-all"
+        >
+          ✨
+        </button>
+      </div>
     );
   }
 
   return (
-    <button
-      onClick={onOpen}
-      className={cn(
-        "w-full rounded-xl border p-2.5 text-left group relative overflow-hidden transition-all hover:shadow-sm min-h-[84px]",
-        isCheatDay
-          ? "border-accent/40 bg-accent/5 hover:border-accent/70"
-          : "border-border bg-card hover:border-primary/30"
-      )}
-    >
-      {isCheatDay && (
-        <span className="absolute top-1.5 right-1.5 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
-          CHEAT
-        </span>
-      )}
-      {/* Swap hint */}
-      <span className="absolute bottom-1.5 right-1.5 text-[9px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-        tap to swap
-      </span>
-      <p className="text-[11px] font-semibold text-foreground leading-tight line-clamp-2 pr-6">
-        {recipe.title}
-      </p>
-      <p className="text-[10px] text-muted-foreground mt-1">{recipe.cuisine}</p>
-      <div className="flex items-center gap-1.5 mt-1.5">
-        <span className="text-[10px] text-muted-foreground">{recipe.macros.calories} cal</span>
-        <span className="text-[10px] text-muted-foreground">·</span>
-        <span className="text-[10px] text-muted-foreground">{recipe.macros.protein}g pro</span>
+    <div className="relative group w-full min-h-[84px]">
+      {/* Main card body — click to preview */}
+      <button
+        onClick={() => onPreview(recipe)}
+        className={cn(
+          "w-full rounded-xl border p-2.5 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[84px]",
+          isCheatDay
+            ? "border-accent/40 bg-accent/5 hover:border-accent/70"
+            : "border-border bg-card hover:border-primary/30"
+        )}
+      >
+        {isCheatDay && (
+          <span className="absolute top-1.5 left-1.5 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
+            CHEAT
+          </span>
+        )}
+        <p
+          className={cn(
+            "text-[11px] font-semibold text-foreground leading-tight line-clamp-2",
+            isCheatDay ? "mt-4" : "pr-10"
+          )}
+        >
+          {recipe.title}
+        </p>
+        <p className="text-[10px] text-muted-foreground mt-1">{recipe.cuisine}</p>
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <span className="text-[10px] text-muted-foreground">
+            {recipe.macros.calories} cal
+          </span>
+          <span className="text-[10px] text-muted-foreground">·</span>
+          <span className="text-[10px] text-muted-foreground">
+            {recipe.macros.protein}g pro
+          </span>
+        </div>
+        {recipe.source === "ai" && (
+          <span className="absolute bottom-1.5 left-1.5 text-[8px] font-medium text-primary/60 bg-primary/5 px-1 py-0.5 rounded-full">
+            ✨ Sage
+          </span>
+        )}
+      </button>
+
+      {/* Hover action buttons */}
+      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRegenerate();
+          }}
+          title="Regenerate with Sage"
+          className="w-6 h-6 rounded-full bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
+        >
+          ✨
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          title="Swap recipe"
+          className="w-6 h-6 rounded-full bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
+        >
+          ↔
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
-
-// ── Picker state type ─────────────────────────────────────────────
-
-type PickerTarget = {
-  dayIndex: number;
-  mealType: MealType;
-};
 
 // ── Main page ─────────────────────────────────────────────────────
 
@@ -274,6 +550,9 @@ export default function PlannerPage() {
   const weekStart = getWeekStartISO(weekOffset);
   const [plan, setPlan] = useState<WeekPlan>(buildDefaultWeekPlan(weekStart));
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
+  const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<PickerTarget | null>(null);
+  const [regeneratingSlot, setRegeneratingSlot] = useState<PickerTarget | null>(null);
 
   const [sameForAll, setSameForAll] = useState<Record<MealType, boolean>>({
     breakfast: false,
@@ -284,7 +563,6 @@ export default function PlannerPage() {
   const weekLabel = formatWeekRange(weekStart);
   const isCurrentWeek = weekOffset === 0;
 
-  // Open picker for a specific slot
   function openPicker(dayIndex: number, mealType: MealType) {
     setPickerTarget({ dayIndex, mealType });
   }
@@ -293,50 +571,78 @@ export default function PlannerPage() {
     setPickerTarget(null);
   }
 
-  // Assign a recipe to a slot (respects same-for-all)
+  function openPreview(recipe: Recipe, dayIndex: number, mealType: MealType) {
+    setPreviewRecipe(recipe);
+    setPreviewTarget({ dayIndex, mealType });
+  }
+
+  function closePreview() {
+    setPreviewRecipe(null);
+    setPreviewTarget(null);
+  }
+
   function assignRecipe(recipe: Recipe) {
     if (!pickerTarget) return;
     const { dayIndex, mealType } = pickerTarget;
-
     setPlan((prev) => {
       const days = prev.days.map((day, i) => {
-        // If same-for-all is on for this meal type, update every day
         const shouldUpdate = sameForAll[mealType] ? true : i === dayIndex;
         if (!shouldUpdate) return day;
-        return {
-          ...day,
-          meals: {
-            ...day.meals,
-            [mealType]: { ...day.meals[mealType], recipe },
-          },
-        };
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe } } };
       });
       return { ...prev, days };
     });
     closePicker();
   }
 
-  // Remove a recipe from a slot
   function removeRecipe() {
     if (!pickerTarget) return;
     const { dayIndex, mealType } = pickerTarget;
     setPlan((prev) => {
       const days = prev.days.map((day, i) => {
         if (i !== dayIndex) return day;
-        return {
-          ...day,
-          meals: { ...day.meals, [mealType]: { recipe: null } },
-        };
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe: null } } };
       });
       return { ...prev, days };
     });
     closePicker();
   }
 
+  async function regenerateMeal(dayIndex: number, mealType: MealType) {
+    setRegeneratingSlot({ dayIndex, mealType });
+    try {
+      const day = plan.days[dayIndex];
+      const prompt = `A healthy ${mealType} recipe${day.isCheatDay ? " (cheat day, indulgent is fine)" : ""}`;
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "single", prompt }),
+      });
+      const data = await res.json();
+      if (res.ok && data.recipe) {
+        const recipe = convertAIToRecipe(data.recipe, mealType);
+        setPlan((prev) => {
+          const days = prev.days.map((d, i) => {
+            if (i !== dayIndex) return d;
+            return { ...d, meals: { ...d.meals, [mealType]: { recipe } } };
+          });
+          return { ...prev, days };
+        });
+      }
+    } catch (e) {
+      console.error("Regenerate failed", e);
+    } finally {
+      setRegeneratingSlot(null);
+    }
+  }
+
   function toggleCheatDay(dayIndex: number) {
     setPlan((prev) => {
       const days = [...prev.days];
-      days[dayIndex] = { ...days[dayIndex], isCheatDay: !days[dayIndex].isCheatDay };
+      days[dayIndex] = {
+        ...days[dayIndex],
+        isCheatDay: !days[dayIndex].isCheatDay,
+      };
       return { ...prev, days };
     });
   }
@@ -345,13 +651,12 @@ export default function PlannerPage() {
     setSameForAll((prev) => ({ ...prev, [mealType]: !prev[mealType] }));
   }
 
-  // Current picker context
   const pickerDay = pickerTarget ? plan.days[pickerTarget.dayIndex] : null;
-  const pickerCurrentRecipe = pickerTarget && pickerDay
-    ? pickerDay.meals[pickerTarget.mealType].recipe
-    : null;
+  const pickerCurrentRecipe =
+    pickerTarget && pickerDay
+      ? pickerDay.meals[pickerTarget.mealType].recipe
+      : null;
 
-  // Summary stats
   const filledSlots = plan.days.reduce(
     (sum, d) =>
       sum +
@@ -379,16 +684,24 @@ export default function PlannerPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="font-serif text-3xl font-bold text-foreground">Meal Planner</h1>
+            <h1 className="font-serif text-3xl font-bold text-foreground">
+              Meal Planner
+            </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Tap any slot to add or swap a meal
+              Tap any slot to preview · hover for ✨ regenerate or ↔ swap
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Link href="/kitchen" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <Link
+              href="/kitchen"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
               ⚙️ My Goals
             </Link>
-            <Link href="/grocery" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <Link
+              href="/grocery"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
               🛒 Grocery list
             </Link>
             <Link
@@ -412,7 +725,9 @@ export default function PlannerPage() {
             ← Prev
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{weekLabel}</span>
+            <span className="text-sm font-semibold text-foreground">
+              {weekLabel}
+            </span>
             {isCurrentWeek && (
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                 This week
@@ -431,7 +746,10 @@ export default function PlannerPage() {
             Next →
           </button>
           {weekOffset !== 0 && (
-            <button onClick={() => setWeekOffset(0)} className="text-xs text-primary hover:underline">
+            <button
+              onClick={() => setWeekOffset(0)}
+              className="text-xs text-primary hover:underline"
+            >
               Today
             </button>
           )}
@@ -451,7 +769,9 @@ export default function PlannerPage() {
               )}
             >
               <span>{emoji}</span>
-              {sameForAll[type] ? `Same ${label} all week ✓` : `Same ${label} weekly`}
+              {sameForAll[type]
+                ? `Same ${label} all week ✓`
+                : `Same ${label} weekly`}
             </button>
           ))}
         </div>
@@ -501,7 +821,9 @@ export default function PlannerPage() {
                           ? "bg-accent/10 text-accent border-accent/30 hover:bg-accent/20"
                           : "bg-background text-muted-foreground border-border hover:border-accent/40 hover:text-accent"
                       )}
-                      title={day.isCheatDay ? "Remove cheat day" : "Mark as cheat day"}
+                      title={
+                        day.isCheatDay ? "Remove cheat day" : "Mark as cheat day"
+                      }
                     >
                       {day.isCheatDay ? "🍕 Cheat" : "Cheat day?"}
                     </button>
@@ -512,7 +834,10 @@ export default function PlannerPage() {
 
             {/* Meal rows */}
             {MEAL_LABELS.map(({ type, emoji, label }) => (
-              <div key={type} className="grid grid-cols-[72px_repeat(7,1fr)] gap-2 mb-2">
+              <div
+                key={type}
+                className="grid grid-cols-[72px_repeat(7,1fr)] gap-2 mb-2"
+              >
                 <div className="flex flex-col items-center justify-center gap-1 py-1">
                   <span className="text-lg">{emoji}</span>
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
@@ -529,13 +854,29 @@ export default function PlannerPage() {
                   const effectiveRecipe = sameForAll[type]
                     ? plan.days[0].meals[type].recipe
                     : day.meals[type].recipe;
+                  const slotRegenerating =
+                    regeneratingSlot?.dayIndex === di &&
+                    regeneratingSlot?.mealType === type;
                   return (
                     <div key={day.day} className="min-h-[84px]">
                       <MealSlotCard
                         recipe={effectiveRecipe}
                         mealType={type}
                         isCheatDay={day.isCheatDay}
-                        onOpen={() => openPicker(sameForAll[type] ? 0 : di, type)}
+                        isRegenerating={slotRegenerating}
+                        onOpen={() =>
+                          openPicker(sameForAll[type] ? 0 : di, type)
+                        }
+                        onPreview={(recipe) =>
+                          openPreview(
+                            recipe,
+                            sameForAll[type] ? 0 : di,
+                            type
+                          )
+                        }
+                        onRegenerate={() =>
+                          regenerateMeal(sameForAll[type] ? 0 : di, type)
+                        }
                       />
                     </div>
                   );
@@ -548,11 +889,18 @@ export default function PlannerPage() {
         {/* Weekly summary */}
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-xl border border-border bg-card p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{filledSlots}<span className="text-base font-normal text-muted-foreground">/{totalSlots}</span></p>
+            <p className="text-2xl font-bold text-primary">
+              {filledSlots}
+              <span className="text-base font-normal text-muted-foreground">
+                /{totalSlots}
+              </span>
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">Meals planned</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{avgCalories > 0 ? avgCalories : "—"}</p>
+            <p className="text-2xl font-bold text-primary">
+              {avgCalories > 0 ? avgCalories : "—"}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">Avg cal / day</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 text-center">
@@ -577,10 +925,11 @@ export default function PlannerPage() {
           <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <p className="font-semibold text-foreground">
-                {totalSlots - filledSlots} empty slot{totalSlots - filledSlots !== 1 ? "s" : ""}
+                {totalSlots - filledSlots} empty slot
+                {totalSlots - filledSlots !== 1 ? "s" : ""}
               </p>
               <p className="text-sm text-muted-foreground">
-                Let AI fill them in based on your Kitchen Goals.
+                Let Sage fill them in based on your Kitchen Goals.
               </p>
             </div>
             <Link
@@ -590,13 +939,32 @@ export default function PlannerPage() {
                 "bg-accent hover:bg-accent/90 text-accent-foreground shrink-0"
               )}
             >
-              ✨ Fill with AI
+              ✨ Fill with Sage
             </Link>
           </div>
         )}
       </main>
 
-      {/* Recipe picker modal — rendered outside main so it overlays correctly */}
+      {/* Recipe preview modal */}
+      {previewRecipe && previewTarget && (
+        <RecipePreviewModal
+          recipe={previewRecipe}
+          isRegenerating={
+            regeneratingSlot?.dayIndex === previewTarget.dayIndex &&
+            regeneratingSlot?.mealType === previewTarget.mealType
+          }
+          onClose={closePreview}
+          onSwap={() => {
+            closePreview();
+            openPicker(previewTarget.dayIndex, previewTarget.mealType);
+          }}
+          onRegenerate={() => {
+            regenerateMeal(previewTarget.dayIndex, previewTarget.mealType);
+          }}
+        />
+      )}
+
+      {/* Recipe picker modal */}
       {pickerTarget && pickerDay && (
         <RecipePickerModal
           mealType={pickerTarget.mealType}
