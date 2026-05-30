@@ -11,7 +11,10 @@ import {
   type MealType,
   type Recipe,
 } from "@/lib/meal-data";
-import { loadWeekPlan, saveWeekPlan, loadCustomRecipes } from "@/lib/local-store";
+import {
+  loadWeekPlan, saveWeekPlan, loadCustomRecipes,
+  loadKitchenGoals, type KitchenGoals,
+} from "@/lib/local-store";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -359,6 +362,89 @@ function RecipePickerModal({
   );
 }
 
+// ── Day Totals Cell ───────────────────────────────────────────────
+
+type DayMacros = { cal: number; pro: number; carbs: number; fat: number };
+
+function computeGoalTargets(goals: KitchenGoals) {
+  const { dailyCalories, macros } = goals;
+  return {
+    cal: dailyCalories,
+    pro: Math.round((dailyCalories * macros.protein) / 100 / 4),
+    carbs: Math.round((dailyCalories * macros.carbs) / 100 / 4),
+    fat: Math.round((dailyCalories * macros.fat) / 100 / 9),
+  };
+}
+
+function macroStatus(actual: number, target: number): "empty" | "low" | "ok" | "warn" | "over" {
+  if (target === 0 || actual === 0) return "empty";
+  const r = actual / target;
+  if (r > 1.2) return "over";
+  if (r > 1.1) return "warn";
+  if (r >= 0.9) return "ok";
+  return "low";
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  empty: "text-muted-foreground",
+  low:   "text-blue-500",
+  ok:    "text-green-600",
+  warn:  "text-yellow-500",
+  over:  "text-destructive",
+};
+
+function DayTotalsCell({
+  actual,
+  goals,
+}: {
+  actual: DayMacros;
+  goals: KitchenGoals;
+}) {
+  const targets = computeGoalTargets(goals);
+  const hasData = actual.cal > 0;
+
+  const rows = [
+    { label: "cal",  val: actual.cal,   target: targets.cal,  unit: "" },
+    { label: "pro",  val: actual.pro,   target: targets.pro,  unit: "g" },
+    { label: "carb", val: actual.carbs, target: targets.carbs, unit: "g" },
+    { label: "fat",  val: actual.fat,   target: targets.fat,  unit: "g" },
+  ];
+
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/50 p-2 flex items-center justify-center min-h-[72px]">
+        <span className="text-[9px] text-muted-foreground">—</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-2 space-y-1 min-h-[72px]">
+      {rows.map(({ label, val, target, unit }) => {
+        const st = macroStatus(val, target);
+        const barPct = Math.min((val / target) * 100, 130);
+        return (
+          <div key={label} className="flex items-center gap-1">
+            <span className="text-[9px] text-muted-foreground w-5 shrink-0">{label}</span>
+            <div className="flex-1 bg-muted rounded-full h-1 overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all",
+                  st === "over" || st === "warn" ? "bg-destructive/70" :
+                  st === "ok" ? "bg-green-500" : "bg-blue-400/60"
+                )}
+                style={{ width: `${barPct}%` }}
+              />
+            </div>
+            <span className={cn("text-[9px] font-semibold shrink-0 w-10 text-right", STATUS_COLOR[st])}>
+              {val}{unit}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Meal Slot Card ────────────────────────────────────────────────
 
 function MealSlotCard({
@@ -500,6 +586,13 @@ export default function PlannerPage() {
     });
   }
 
+  const [kitchenGoals, setKitchenGoals] = useState<KitchenGoals>(() => loadKitchenGoals());
+
+  // Refresh goals whenever planner is focused (in case kitchen was updated)
+  useEffect(() => {
+    setKitchenGoals(loadKitchenGoals());
+  }, []);
+
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PickerTarget | null>(null);
@@ -553,19 +646,25 @@ export default function PlannerPage() {
     closePicker();
   }
 
+  function buildCombinedPool() {
+    const custom = loadCustomRecipes();
+    const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
+    return [...custom.filter((r) => !seedIds.has(r.id)), ...ALL_RECIPES];
+  }
+
   function assignRandomRecipe(dayIndex: number, mealType: MealType) {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
+    const combined = buildCombinedPool();
 
-    // Build pool from custom (AI) + seeded recipes — healthy meals only
-    const custom = loadCustomRecipes();
-    const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
-    const combined = [
-      ...custom.filter((r) => !seedIds.has(r.id)),
-      ...ALL_RECIPES,
-    ];
+    const typePool = combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType));
 
-    const pool = combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType));
+    // Goal-aware: prefer recipes within ±10% of per-meal calorie target
+    const perMealTarget = kitchenGoals.dailyCalories / 3;
+    const lo = perMealTarget * 0.9;
+    const hi = perMealTarget * 1.1;
+    const goalPool = typePool.filter((r) => r.macros.calories >= lo && r.macros.calories <= hi);
+    const pool = goalPool.length > 0 ? goalPool : typePool;
     if (pool.length === 0) return;
 
     const currentId = day.meals[mealType].recipe?.id;
@@ -585,16 +684,12 @@ export default function PlannerPage() {
   function assignCheatMeal(dayIndex: number, mealType: MealType) {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
+    const combined = buildCombinedPool();
 
-    // Build pool — cheat-flagged recipes only
-    const custom = loadCustomRecipes();
-    const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
-    const combined = [
-      ...custom.filter((r) => !seedIds.has(r.id)),
-      ...ALL_RECIPES,
-    ];
-
-    const pool = combined.filter((r) => r.isCheatDay === true);
+    // Cheat meals matching this meal type; fall back to any cheat meal
+    const typeCheat = combined.filter((r) => r.isCheatDay === true && r.mealType.includes(mealType));
+    const anyCheat  = combined.filter((r) => r.isCheatDay === true);
+    const pool = typeCheat.length > 0 ? typeCheat : anyCheat;
     if (pool.length === 0) return;
 
     const currentId = day.meals[mealType].recipe?.id;
@@ -619,6 +714,25 @@ export default function PlannerPage() {
   const pickerCurrentRecipe =
     pickerTarget && pickerDay ? pickerDay.meals[pickerTarget.mealType].recipe : null;
 
+  // Per-day effective macros (respects sameForAll display logic)
+  function getDayMacros(dayIndex: number): DayMacros {
+    return MEAL_LABELS.reduce(
+      (acc, { type }) => {
+        const r = sameForAll[type]
+          ? plan.days[0].meals[type].recipe
+          : plan.days[dayIndex].meals[type].recipe;
+        if (!r) return acc;
+        return {
+          cal:   acc.cal   + r.macros.calories,
+          pro:   acc.pro   + r.macros.protein,
+          carbs: acc.carbs + r.macros.carbs,
+          fat:   acc.fat   + r.macros.fat,
+        };
+      },
+      { cal: 0, pro: 0, carbs: 0, fat: 0 } as DayMacros
+    );
+  }
+
   const filledSlots = plan.days.reduce(
     (sum, d) =>
       sum +
@@ -628,14 +742,6 @@ export default function PlannerPage() {
     0
   );
   const totalSlots = 7 * 3;
-  const avgCalories = Math.round(
-    plan.days.reduce((sum, d) => (
-      sum +
-      (d.meals.breakfast.recipe?.macros.calories ?? 0) +
-      (d.meals.lunch.recipe?.macros.calories ?? 0) +
-      (d.meals.dinner.recipe?.macros.calories ?? 0)
-    ), 0) / 7
-  );
   const cheatMealCount = plan.days.reduce(
     (sum, d) =>
       sum +
@@ -644,6 +750,27 @@ export default function PlannerPage() {
       (d.meals.dinner.recipe?.isCheatDay ? 1 : 0),
     0
   );
+
+  // Week totals
+  const weekTotals = plan.days.reduce(
+    (acc, _, i) => {
+      const dm = getDayMacros(i);
+      return {
+        cal:   acc.cal   + dm.cal,
+        pro:   acc.pro   + dm.pro,
+        carbs: acc.carbs + dm.carbs,
+        fat:   acc.fat   + dm.fat,
+      };
+    },
+    { cal: 0, pro: 0, carbs: 0, fat: 0 } as DayMacros
+  );
+  const weekGoalTargets = computeGoalTargets(kitchenGoals);
+  const weekGoals: DayMacros = {
+    cal:   weekGoalTargets.cal   * 7,
+    pro:   weekGoalTargets.pro   * 7,
+    carbs: weekGoalTargets.carbs * 7,
+    fat:   weekGoalTargets.fat   * 7,
+  };
 
   return (
     <>
@@ -777,6 +904,18 @@ export default function PlannerPage() {
                 })}
               </div>
             ))}
+
+            {/* Day totals row */}
+            <div className="grid grid-cols-[72px_repeat(7,1fr)] gap-2 mt-1">
+              <div className="flex flex-col items-center justify-center gap-0.5 py-1">
+                <span className="text-sm">📊</span>
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide">Goals</span>
+                <span className="text-[8px] text-muted-foreground">/{kitchenGoals.dailyCalories}cal</span>
+              </div>
+              {plan.days.map((_, di) => (
+                <DayTotalsCell key={di} actual={getDayMacros(di)} goals={kitchenGoals} />
+              ))}
+            </div>
           </div>
         </div>
 
@@ -787,8 +926,10 @@ export default function PlannerPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Meals planned</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{avgCalories > 0 ? avgCalories : "—"}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Avg cal / day</p>
+            <p className={cn("text-2xl font-bold", macroStatus(weekTotals.cal, weekGoals.cal) === "over" ? "text-destructive" : macroStatus(weekTotals.cal, weekGoals.cal) === "ok" ? "text-green-600" : "text-primary")}>
+              {weekTotals.cal > 0 ? weekTotals.cal.toLocaleString() : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">Week cal <span className="text-[10px]">/{weekGoals.cal.toLocaleString()}</span></p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-accent">{cheatMealCount}</p>
@@ -800,6 +941,49 @@ export default function PlannerPage() {
             </Link>
           </div>
         </div>
+
+        {/* Week macro totals vs goals */}
+        {weekTotals.cal > 0 && (
+          <div className="mt-3 rounded-2xl border border-border bg-card p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Weekly totals vs goals</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: "Calories", val: weekTotals.cal,   goal: weekGoals.cal,   unit: "" },
+                { label: "Protein",  val: weekTotals.pro,   goal: weekGoals.pro,   unit: "g" },
+                { label: "Carbs",    val: weekTotals.carbs, goal: weekGoals.carbs, unit: "g" },
+                { label: "Fat",      val: weekTotals.fat,   goal: weekGoals.fat,   unit: "g" },
+              ].map(({ label, val, goal, unit }) => {
+                const st = macroStatus(val, goal);
+                const barPct = Math.min((val / goal) * 100, 115);
+                return (
+                  <div key={label}>
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="text-xs font-medium text-foreground">{label}</span>
+                      <span className={cn("text-xs font-bold", STATUS_COLOR[st])}>
+                        {val.toLocaleString()}{unit}
+                        <span className="text-muted-foreground font-normal">/{goal.toLocaleString()}{unit}</span>
+                      </span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all",
+                          st === "over" || st === "warn" ? "bg-destructive/70" :
+                          st === "ok" ? "bg-green-500" : "bg-blue-400/60"
+                        )}
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
+                    {st === "over" && (
+                      <p className="text-[10px] text-destructive mt-0.5">
+                        +{(val - goal).toLocaleString()}{unit} over goal
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {filledSlots < totalSlots && (
           <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

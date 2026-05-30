@@ -1,9 +1,48 @@
 /**
  * Simple localStorage persistence layer.
- * Handles week plans, AI-generated recipes, and recipe meal-type tags.
+ * Handles week plans, AI-generated recipes, recipe meal-type tags, and kitchen goals.
  */
 
 import type { MealType, Recipe, WeekPlan } from "./meal-data";
+
+// ── Kitchen goals ─────────────────────────────────────────────────
+
+export type KitchenGoals = {
+  dailyCalories: number;
+  macros: { protein: number; carbs: number; fat: number }; // percentages 0–100
+};
+
+export const DEFAULT_KITCHEN_GOALS: KitchenGoals = {
+  dailyCalories: 2000,
+  macros: { protein: 30, carbs: 40, fat: 30 },
+};
+
+const KITCHEN_KEY = "pantri-kitchen-profile";
+
+export function loadKitchenGoals(): KitchenGoals {
+  if (typeof window === "undefined") return DEFAULT_KITCHEN_GOALS;
+  try {
+    const stored = localStorage.getItem(KITCHEN_KEY);
+    if (!stored) return DEFAULT_KITCHEN_GOALS;
+    const p = JSON.parse(stored);
+    return {
+      dailyCalories: p.dailyCalories ?? DEFAULT_KITCHEN_GOALS.dailyCalories,
+      macros: p.macros ?? DEFAULT_KITCHEN_GOALS.macros,
+    };
+  } catch {
+    return DEFAULT_KITCHEN_GOALS;
+  }
+}
+
+/** Merges the provided fields into the stored kitchen profile (preserves other settings). */
+export function saveKitchenProfile(profile: object) {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = localStorage.getItem(KITCHEN_KEY);
+    const base = existing ? JSON.parse(existing) : {};
+    localStorage.setItem(KITCHEN_KEY, JSON.stringify({ ...base, ...profile }));
+  } catch {}
+}
 
 // ── Week plans ────────────────────────────────────────────────────
 

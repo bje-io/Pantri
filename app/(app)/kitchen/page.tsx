@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { loadKitchenGoals, saveKitchenProfile } from "@/lib/local-store";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -150,6 +151,12 @@ const DEFAULT_PROFILE: KitchenProfile = {
 export default function KitchenPage() {
   const [profile, setProfile] = useState<KitchenProfile>(DEFAULT_PROFILE);
   const [saved, setSaved] = useState(false);
+
+  // Load persisted profile on mount
+  useEffect(() => {
+    const goals = loadKitchenGoals();
+    setProfile((p) => ({ ...p, ...goals }));
+  }, []);
 
   function set<K extends keyof KitchenProfile>(key: K, value: KitchenProfile[K]) {
     setProfile((p) => ({ ...p, [key]: value }));
@@ -459,7 +466,7 @@ export default function KitchenPage() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => setSaved(true)}
+              onClick={() => { saveKitchenProfile(profile); setSaved(true); }}
               className={cn(buttonVariants(), "bg-primary hover:bg-primary/90")}
             >
               {saved ? "✓ Saved" : "Save profile"}
