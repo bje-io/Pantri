@@ -1,18 +1,19 @@
-import { SignIn } from "@clerk/nextjs";
+import { SignUp } from "@clerk/nextjs";
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="font-serif text-3xl font-bold text-foreground mb-2">
-            Welcome back
+            Create your account
           </h1>
           <p className="text-muted-foreground text-sm">
-            Sign in to your Pantri account
+            Start planning smarter meals with Pantri
           </p>
         </div>
-        <SignIn
+        <SignUp
+          routing="hash"
           appearance={{
             elements: {
               rootBox: "w-full",
