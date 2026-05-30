@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { useAuth, UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -18,6 +18,7 @@ const NAV_LINKS = [
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { isSignedIn } = useAuth();
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + "/");
@@ -51,17 +52,18 @@ export default function Navbar() {
 
           {/* Auth — desktop */}
           <div className="hidden md:flex items-center gap-3">
-            <SignedOut>
-              <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-                Sign in
-              </Link>
-              <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
-                Get started free
-              </Link>
-            </SignedOut>
-            <SignedIn>
+            {isSignedIn ? (
               <UserButton afterSignOutUrl="/" />
-            </SignedIn>
+            ) : (
+              <>
+                <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                  Sign in
+                </Link>
+                <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+                  Get started free
+                </Link>
+              </>
+            )}
           </div>
 
           <button
@@ -98,17 +100,18 @@ export default function Navbar() {
               </Link>
             ))}
             <div className="flex items-center gap-3 pt-3 px-3">
-              <SignedOut>
-                <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-                  Sign in
-                </Link>
-                <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
-                  Get started
-                </Link>
-              </SignedOut>
-              <SignedIn>
+              {isSignedIn ? (
                 <UserButton afterSignOutUrl="/" />
-              </SignedIn>
+              ) : (
+                <>
+                  <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                    Sign in
+                  </Link>
+                  <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+                    Get started
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
