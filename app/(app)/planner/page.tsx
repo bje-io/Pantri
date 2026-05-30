@@ -13,7 +13,7 @@ import {
 } from "@/lib/meal-data";
 import {
   loadWeekPlan, saveWeekPlan, loadCustomRecipes,
-  loadKitchenGoals, type KitchenGoals,
+  loadKitchenGoals, derivedCalories, type KitchenGoals,
 } from "@/lib/local-store";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -367,12 +367,12 @@ function RecipePickerModal({
 type DayMacros = { cal: number; pro: number; carbs: number; fat: number };
 
 function computeGoalTargets(goals: KitchenGoals) {
-  const { dailyCalories, macros } = goals;
+  // macros are in grams — calories are derived
   return {
-    cal: dailyCalories,
-    pro: Math.round((dailyCalories * macros.protein) / 100 / 4),
-    carbs: Math.round((dailyCalories * macros.carbs) / 100 / 4),
-    fat: Math.round((dailyCalories * macros.fat) / 100 / 9),
+    cal:   Math.round(goals.macros.protein * 4 + goals.macros.carbs * 4 + goals.macros.fat * 9),
+    pro:   goals.macros.protein,
+    carbs: goals.macros.carbs,
+    fat:   goals.macros.fat,
   };
 }
 
@@ -660,7 +660,7 @@ export default function PlannerPage() {
     const typePool = combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType));
 
     // Goal-aware: prefer recipes within ±10% of per-meal calorie target
-    const perMealTarget = kitchenGoals.dailyCalories / 3;
+    const perMealTarget = derivedCalories(kitchenGoals.macros) / 3;
     const lo = perMealTarget * 0.9;
     const hi = perMealTarget * 1.1;
     const goalPool = typePool.filter((r) => r.macros.calories >= lo && r.macros.calories <= hi);

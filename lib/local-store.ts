@@ -6,18 +6,26 @@
 import type { MealType, Recipe, WeekPlan } from "./meal-data";
 
 // ── Kitchen goals ─────────────────────────────────────────────────
+// macros are stored in GRAMS. Calories are always derived:
+//   calories = protein_g * 4 + carbs_g * 4 + fat_g * 9
 
 export type KitchenGoals = {
-  dailyCalories: number;
-  macros: { protein: number; carbs: number; fat: number }; // percentages 0–100
+  dailyCalories: number; // derived — protein*4 + carbs*4 + fat*9
+  macros: { protein: number; carbs: number; fat: number }; // GRAMS
 };
 
+// Defaults ≈ 1,949 cal: 150g pro (600) + 200g carbs (800) + 61g fat (549)
 export const DEFAULT_KITCHEN_GOALS: KitchenGoals = {
-  dailyCalories: 2000,
-  macros: { protein: 30, carbs: 40, fat: 30 },
+  dailyCalories: 1949,
+  macros: { protein: 150, carbs: 200, fat: 61 },
 };
 
 const KITCHEN_KEY = "pantri-kitchen-profile";
+const KITCHEN_FORMAT = "grams-v1"; // version flag — old % data is ignored
+
+export function derivedCalories(macros: { protein: number; carbs: number; fat: number }): number {
+  return Math.round(macros.protein * 4 + macros.carbs * 4 + macros.fat * 9);
+}
 
 export function loadKitchenGoals(): KitchenGoals {
   if (typeof window === "undefined") return DEFAULT_KITCHEN_GOALS;
@@ -25,22 +33,34 @@ export function loadKitchenGoals(): KitchenGoals {
     const stored = localStorage.getItem(KITCHEN_KEY);
     if (!stored) return DEFAULT_KITCHEN_GOALS;
     const p = JSON.parse(stored);
-    return {
-      dailyCalories: p.dailyCalories ?? DEFAULT_KITCHEN_GOALS.dailyCalories,
-      macros: p.macros ?? DEFAULT_KITCHEN_GOALS.macros,
-    };
+    // Ignore old percentage-based data
+    if (p._fmt !== KITCHEN_FORMAT) return DEFAULT_KITCHEN_GOALS;
+    const macros = p.macros ?? DEFAULT_KITCHEN_GOALS.macros;
+    return { dailyCalories: derivedCalories(macros), macros };
   } catch {
     return DEFAULT_KITCHEN_GOALS;
   }
 }
 
-/** Merges the provided fields into the stored kitchen profile (preserves other settings). */
+/** Loads the full persisted kitchen profile (for the Kitchen page). Returns null if none saved. */
+export function loadKitchenProfile(): Record<string, unknown> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(KITCHEN_KEY);
+    if (!stored) return null;
+    const p = JSON.parse(stored);
+    if (p._fmt !== KITCHEN_FORMAT) return null; // ignore old format
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+/** Saves the full kitchen profile, tagging it with the current format version. */
 export function saveKitchenProfile(profile: object) {
   if (typeof window === "undefined") return;
   try {
-    const existing = localStorage.getItem(KITCHEN_KEY);
-    const base = existing ? JSON.parse(existing) : {};
-    localStorage.setItem(KITCHEN_KEY, JSON.stringify({ ...base, ...profile }));
+    localStorage.setItem(KITCHEN_KEY, JSON.stringify({ ...profile, _fmt: KITCHEN_FORMAT }));
   } catch {}
 }
 

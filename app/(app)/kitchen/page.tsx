@@ -3,15 +3,15 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { loadKitchenGoals, saveKitchenProfile } from "@/lib/local-store";
+import { loadKitchenProfile, saveKitchenProfile, derivedCalories } from "@/lib/local-store";
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type MacroSplit = { protein: number; carbs: number; fat: number };
+/** macros are in GRAMS; calories are always derived (protein×4 + carbs×4 + fat×9) */
+type MacroGrams = { protein: number; carbs: number; fat: number };
 
 type KitchenProfile = {
-  dailyCalories: number;
-  macros: MacroSplit;
+  macros: MacroGrams;
   servings: number;
   dietaryPrefs: string[];
   allergies: string[];
@@ -81,11 +81,14 @@ const GOAL_OPTIONS = [
   { id: "custom", label: "Custom", emoji: "⚙️", desc: "Set your own targets manually" },
 ] as const;
 
+// Gram-based macro presets per goal (calories are derived: pro×4 + carbs×4 + fat×9)
+// lose-weight  ≈ 1,597 cal  |  maintain    ≈ 2,003 cal
+// build-muscle ≈ 2,507 cal  |  eat-healthy ≈ 1,905 cal
 const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
-  "lose-weight": { dailyCalories: 1600, macros: { protein: 40, carbs: 35, fat: 25 } },
-  maintain: { dailyCalories: 2000, macros: { protein: 30, carbs: 40, fat: 30 } },
-  "build-muscle": { dailyCalories: 2400, macros: { protein: 35, carbs: 45, fat: 20 } },
-  "eat-healthy": { dailyCalories: 1900, macros: { protein: 25, carbs: 50, fat: 25 } },
+  "lose-weight":  { macros: { protein: 130, carbs: 150, fat: 53 } },
+  maintain:       { macros: { protein: 150, carbs: 200, fat: 67 } },
+  "build-muscle": { macros: { protein: 190, carbs: 250, fat: 83 } },
+  "eat-healthy":  { macros: { protein: 140, carbs: 190, fat: 65 } },
   custom: {},
 };
 
@@ -134,8 +137,7 @@ function Toggle({
 // ── Main page ─────────────────────────────────────────────────────
 
 const DEFAULT_PROFILE: KitchenProfile = {
-  dailyCalories: 2000,
-  macros: { protein: 30, carbs: 40, fat: 30 },
+  macros: { protein: 150, carbs: 200, fat: 61 }, // ≈ 1,949 cal
   servings: 2,
   dietaryPrefs: [],
   allergies: [],
@@ -154,8 +156,10 @@ export default function KitchenPage() {
 
   // Load persisted profile on mount
   useEffect(() => {
-    const goals = loadKitchenGoals();
-    setProfile((p) => ({ ...p, ...goals }));
+    const stored = loadKitchenProfile();
+    if (stored) {
+      setProfile((p) => ({ ...p, ...(stored as Partial<KitchenProfile>) }));
+    }
   }, []);
 
   function set<K extends keyof KitchenProfile>(key: K, value: KitchenProfile[K]) {
@@ -178,7 +182,12 @@ export default function KitchenPage() {
     setSaved(false);
   }
 
-  const totalMacros = profile.macros.protein + profile.macros.carbs + profile.macros.fat;
+  const derivedCals = derivedCalories(profile.macros);
+  // calorie share of each macro (for the visual bar)
+  const proCals  = profile.macros.protein * 4;
+  const carbCals = profile.macros.carbs   * 4;
+  const fatCals  = profile.macros.fat     * 9;
+  const totalMacroCals = proCals + carbCals + fatCals || 1; // guard /0
 
   return (
     <main className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
@@ -224,65 +233,100 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Nutrition targets ── */}
-        <Section title="Nutrition Targets" subtitle="Daily goals AI will aim for when building your plan.">
+        <Section title="Nutrition Targets" subtitle="Set your daily macro targets in grams — calories are calculated automatically.">
           <div className="space-y-5">
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm font-medium text-foreground">Daily calories</label>
-                <span className="text-sm font-bold text-primary">{profile.dailyCalories} kcal</span>
+
+            {/* Derived calorie display */}
+            <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Daily calories (derived)</p>
+                <p className="text-xs text-muted-foreground mt-0.5">protein × 4 + carbs × 4 + fat × 9</p>
               </div>
-              <input
-                type="range"
-                min={1000}
-                max={3500}
-                step={50}
-                value={profile.dailyCalories}
-                onChange={(e) => set("dailyCalories", Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>1,000</span><span>3,500</span>
-              </div>
+              <span className="text-2xl font-bold text-primary">{derivedCals.toLocaleString()} kcal</span>
             </div>
 
+            {/* Gram sliders */}
             <div>
-              <p className="text-sm font-medium text-foreground mb-3">Macro split</p>
-              <div className="grid grid-cols-3 gap-4">
-                {(["protein", "carbs", "fat"] as const).map((macro) => (
-                  <div key={macro}>
-                    <div className="flex justify-between mb-1">
-                      <label className="text-xs text-muted-foreground capitalize">{macro}</label>
-                      <span className="text-xs font-semibold text-foreground">{profile.macros[macro]}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={10}
-                      max={70}
-                      step={5}
-                      value={profile.macros[macro]}
-                      onChange={(e) =>
-                        set("macros", { ...profile.macros, [macro]: Number(e.target.value) })
-                      }
-                      className="w-full accent-primary"
-                    />
+              <p className="text-sm font-medium text-foreground mb-3">Macros (grams per day)</p>
+              <div className="space-y-4">
+                {/* Protein */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-muted-foreground">Protein</label>
+                    <span className="text-xs font-semibold text-foreground">
+                      {profile.macros.protein} g &nbsp;
+                      <span className="text-muted-foreground">({proCals} kcal)</span>
+                    </span>
                   </div>
-                ))}
+                  <input
+                    type="range" min={50} max={350} step={5}
+                    value={profile.macros.protein}
+                    onChange={(e) => set("macros", { ...profile.macros, protein: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                    <span>50 g</span><span>350 g</span>
+                  </div>
+                </div>
+                {/* Carbs */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-muted-foreground">Carbs</label>
+                    <span className="text-xs font-semibold text-foreground">
+                      {profile.macros.carbs} g &nbsp;
+                      <span className="text-muted-foreground">({carbCals} kcal)</span>
+                    </span>
+                  </div>
+                  <input
+                    type="range" min={50} max={500} step={5}
+                    value={profile.macros.carbs}
+                    onChange={(e) => set("macros", { ...profile.macros, carbs: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                    <span>50 g</span><span>500 g</span>
+                  </div>
+                </div>
+                {/* Fat */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-muted-foreground">Fat</label>
+                    <span className="text-xs font-semibold text-foreground">
+                      {profile.macros.fat} g &nbsp;
+                      <span className="text-muted-foreground">({fatCals} kcal)</span>
+                    </span>
+                  </div>
+                  <input
+                    type="range" min={15} max={200} step={2}
+                    value={profile.macros.fat}
+                    onChange={(e) => set("macros", { ...profile.macros, fat: Number(e.target.value) })}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                    <span>15 g</span><span>200 g</span>
+                  </div>
+                </div>
               </div>
-              {totalMacros !== 100 && (
-                <p className="text-xs text-destructive mt-2">
-                  Macros total {totalMacros}% — adjust to reach 100%
-                </p>
-              )}
-              {/* Visual bar */}
-              <div className="flex rounded-full overflow-hidden h-3 mt-3">
-                <div className="bg-primary transition-all" style={{ width: `${profile.macros.protein}%` }} />
-                <div className="bg-accent transition-all" style={{ width: `${profile.macros.carbs}%` }} />
-                <div className="bg-muted-foreground/40 transition-all" style={{ width: `${profile.macros.fat}%` }} />
+
+              {/* Visual calorie-share bar */}
+              <div className="flex rounded-full overflow-hidden h-3 mt-4">
+                <div className="bg-primary transition-all" style={{ width: `${(proCals / totalMacroCals) * 100}%` }} />
+                <div className="bg-accent transition-all" style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
+                <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(fatCals / totalMacroCals) * 100}%` }} />
               </div>
               <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary inline-block" />Protein</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent inline-block" />Carbs</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/40 inline-block" />Fat</span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-primary inline-block" />
+                  Protein ({Math.round((proCals / totalMacroCals) * 100)}%)
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-accent inline-block" />
+                  Carbs ({Math.round((carbCals / totalMacroCals) * 100)}%)
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 inline-block" />
+                  Fat ({Math.round((fatCals / totalMacroCals) * 100)}%)
+                </span>
               </div>
             </div>
           </div>
