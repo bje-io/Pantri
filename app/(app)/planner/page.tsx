@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,6 +12,11 @@ import {
   type MealType,
   type Recipe,
 } from "@/lib/meal-data";
+import {
+  loadWeekPlan,
+  saveWeekPlan,
+  saveCustomRecipe,
+} from "@/lib/local-store";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -548,7 +553,23 @@ function MealSlotCard({
 export default function PlannerPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = getWeekStartISO(weekOffset);
-  const [plan, setPlan] = useState<WeekPlan>(buildDefaultWeekPlan(weekStart));
+
+  // Load from localStorage on init
+  const [plan, setPlan] = useState<WeekPlan>(() => {
+    const ws = getWeekStartISO(0);
+    return loadWeekPlan(ws) ?? buildDefaultWeekPlan(ws);
+  });
+
+  // When week changes, load that week's plan
+  useEffect(() => {
+    setPlan(loadWeekPlan(weekStart) ?? buildDefaultWeekPlan(weekStart));
+  }, [weekStart]);
+
+  // Persist plan whenever it changes
+  useEffect(() => {
+    saveWeekPlan(plan);
+  }, [plan]);
+
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PickerTarget | null>(null);
@@ -636,6 +657,8 @@ export default function PlannerPage() {
       const data = await res.json();
       if (res.ok && data.recipe) {
         const recipe = convertAIToRecipe(data.recipe, mealType);
+        // Save to custom recipes so it appears on the Recipes page
+        saveCustomRecipe(recipe);
         setPlan((prev) => {
           const days = prev.days.map((d, i) => {
             if (i !== dayIndex) return d;

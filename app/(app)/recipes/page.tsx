@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ALL_RECIPES, type MealType, type Recipe } from "@/lib/meal-data";
+import { loadCustomRecipes } from "@/lib/local-store";
 
 const MEAL_FILTERS: { type: MealType | "all"; label: string; emoji: string }[] = [
   { type: "all", label: "All", emoji: "🍽️" },
@@ -384,6 +385,16 @@ export default function RecipesPage() {
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
 
+  // Load AI-generated recipes from localStorage
+  const [customRecipes, setCustomRecipes] = useState<Recipe[]>(() =>
+    loadCustomRecipes()
+  );
+
+  // Merge: custom AI recipes first, then seeded recipes (no duplicates)
+  const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
+  const uniqueCustom = customRecipes.filter((r) => !seedIds.has(r.id));
+  const allRecipes = [...uniqueCustom, ...ALL_RECIPES];
+
   function toggleSave(id: string) {
     setSaved((s) => {
       const next = new Set(s);
@@ -392,7 +403,7 @@ export default function RecipesPage() {
     });
   }
 
-  const filtered = ALL_RECIPES.filter((r) => {
+  const filtered = allRecipes.filter((r) => {
     if (mealFilter !== "all" && !r.mealType.includes(mealFilter)) return false;
     if (cuisineFilter !== "All" && r.cuisine !== cuisineFilter) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()))
@@ -400,7 +411,7 @@ export default function RecipesPage() {
     return true;
   });
 
-  const savedRecipes = ALL_RECIPES.filter((r) => saved.has(r.id));
+  const savedRecipes = allRecipes.filter((r) => saved.has(r.id));
 
   return (
     <>
@@ -412,7 +423,7 @@ export default function RecipesPage() {
               Recipes
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {ALL_RECIPES.length} recipes · {savedRecipes.length} favorites
+              {allRecipes.length} recipes · {savedRecipes.length} favorites
             </p>
           </div>
           <Link
@@ -499,6 +510,27 @@ export default function RecipesPage() {
                   key={r.id}
                   recipe={r}
                   saved={true}
+                  onSave={() => toggleSave(r.id)}
+                  onPreview={() => setPreviewRecipe(r)}
+                />
+              ))}
+            </div>
+            <div className="border-t border-border mt-8 mb-6" />
+          </div>
+        )}
+
+        {/* AI Generated recipes */}
+        {uniqueCustom.length > 0 && (
+          <div className="mb-10">
+            <h2 className="font-serif text-xl font-bold text-foreground mb-4 flex items-center gap-2">
+              <span>✨</span> Created by Sage
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {uniqueCustom.map((r) => (
+                <RecipeCard
+                  key={r.id}
+                  recipe={r}
+                  saved={saved.has(r.id)}
                   onSave={() => toggleSave(r.id)}
                   onPreview={() => setPreviewRecipe(r)}
                 />
