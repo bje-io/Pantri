@@ -372,6 +372,16 @@ function RecipeCard({
             👁 Preview
           </button>
           <AddToWeekMenu recipe={recipe} />
+          <button
+            onClick={() => window.open(`/recipes/${recipe.id}`, "_blank")}
+            title="Open in new tab"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "px-2.5 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            ↗
+          </button>
         </div>
       </div>
     </div>

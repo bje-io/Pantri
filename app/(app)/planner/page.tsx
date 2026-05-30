@@ -446,7 +446,7 @@ function MealSlotCard({
         )}
       </button>
 
-      {/* Hover actions */}
+      {/* Hover actions — top right */}
       <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
           onClick={(e) => { e.stopPropagation(); onRandom(); }}
@@ -463,6 +463,15 @@ function MealSlotCard({
           ↔
         </button>
       </div>
+
+      {/* Pop-out button — bottom right, always visible */}
+      <button
+        onClick={(e) => { e.stopPropagation(); window.open(`/recipes/${recipe.id}`, "_blank"); }}
+        title="Open full recipe in new tab"
+        className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded bg-background/90 border border-border hover:border-primary/50 hover:bg-primary/5 flex items-center justify-center text-[10px] text-muted-foreground hover:text-primary shadow-sm transition-all z-10"
+      >
+        ↗
+      </button>
     </div>
   );
 }
