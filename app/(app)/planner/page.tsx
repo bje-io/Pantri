@@ -209,14 +209,12 @@ function RecipePreviewModal({
 
 function RecipePickerModal({
   mealType,
-  isCheatDay,
   currentRecipe,
   onSelect,
   onRemove,
   onClose,
 }: {
   mealType: MealType;
-  isCheatDay: boolean;
   currentRecipe: Recipe | null;
   onSelect: (recipe: Recipe) => void;
   onRemove: () => void;
@@ -232,11 +230,10 @@ function RecipePickerModal({
     ...ALL_RECIPES,
   ];
 
-  const pool = allAvailable.filter((r) => {
-    if (isCheatDay) return true;
-    if (r.isCheatDay) return false;
-    return r.mealType.includes(mealType);
-  });
+  // Show all recipes (including cheat meals) — cheat meals are just another option
+  const pool = allAvailable.filter(
+    (r) => r.isCheatDay || r.mealType.includes(mealType)
+  );
 
   const filtered = pool.filter(
     (r) =>
@@ -256,7 +253,7 @@ function RecipePickerModal({
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border shrink-0">
           <div>
             <h2 className="font-serif text-lg font-bold text-foreground">
-              {isCheatDay ? "🍕 Pick a cheat meal" : `Pick a ${mealType}`}
+              Pick a {mealType}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {filtered.length} recipe{filtered.length !== 1 ? "s" : ""} available
@@ -366,37 +363,26 @@ function RecipePickerModal({
 
 function MealSlotCard({
   recipe,
-  mealType,
-  isCheatDay,
   onOpen,
   onPreview,
   onRandom,
+  onCheatMeal,
 }: {
   recipe: Recipe | null;
-  mealType: MealType;
-  isCheatDay: boolean;
   onOpen: () => void;
   onPreview: (recipe: Recipe) => void;
   onRandom: () => void;
+  onCheatMeal: () => void;
 }) {
   if (!recipe) {
     return (
       <div className="relative w-full min-h-[130px]">
         <button
           onClick={onOpen}
-          className={cn(
-            "w-full h-full min-h-[130px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground group",
-            isCheatDay
-              ? "border-accent/30 hover:border-accent/60 hover:bg-accent/5"
-              : "border-border hover:border-primary/40 hover:bg-primary/5"
-          )}
+          className="w-full h-full min-h-[130px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground border-border hover:border-primary/40 hover:bg-primary/5 group"
         >
-          <span className={cn("text-xl transition-transform group-hover:scale-110", isCheatDay ? "text-accent/70" : "")}>
-            {isCheatDay ? "🍕" : "+"}
-          </span>
-          <span className="text-[10px] font-medium">
-            {isCheatDay ? "Cheat meal" : "Add meal"}
-          </span>
+          <span className="text-xl transition-transform group-hover:scale-110">+</span>
+          <span className="text-[10px] font-medium">Add meal</span>
         </button>
         <button
           onClick={onRandom}
@@ -415,16 +401,16 @@ function MealSlotCard({
         onClick={() => onPreview(recipe)}
         className={cn(
           "w-full rounded-xl border p-3 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[130px] flex flex-col",
-          isCheatDay
+          recipe.isCheatDay
             ? "border-accent/40 bg-accent/5 hover:border-accent/70"
             : "border-border bg-card hover:border-primary/30"
         )}
       >
         {/* Title row */}
-        <div className={cn("pr-14", isCheatDay && "pt-5")}>
-          {isCheatDay && (
+        <div className={cn("pr-14", recipe.isCheatDay && "pt-5")}>
+          {recipe.isCheatDay && (
             <span className="absolute top-2 left-2 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
-              CHEAT
+              🍕 CHEAT
             </span>
           )}
           <p className="text-xs font-semibold text-foreground leading-tight line-clamp-2">
@@ -453,10 +439,17 @@ function MealSlotCard({
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
           onClick={(e) => { e.stopPropagation(); onRandom(); }}
-          title="Surprise me — random recipe"
+          title="Random healthy meal"
           className="w-6 h-6 rounded-full bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
         >
           🎲
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onCheatMeal(); }}
+          title="Random cheat meal"
+          className="w-6 h-6 rounded-full bg-background/95 border border-accent/40 hover:border-accent/70 hover:bg-accent/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
+        >
+          🍕
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onOpen(); }}
@@ -564,7 +557,7 @@ export default function PlannerPage() {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
 
-    // Build pool from custom (AI) + seeded recipes
+    // Build pool from custom (AI) + seeded recipes — healthy meals only
     const custom = loadCustomRecipes();
     const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
     const combined = [
@@ -572,11 +565,7 @@ export default function PlannerPage() {
       ...ALL_RECIPES,
     ];
 
-    const pool = combined.filter((r) => {
-      if (day.isCheatDay) return true;
-      if (r.isCheatDay) return false;
-      return r.mealType.includes(mealType);
-    });
+    const pool = combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType));
     if (pool.length === 0) return;
 
     const currentId = day.meals[mealType].recipe?.id;
@@ -593,12 +582,32 @@ export default function PlannerPage() {
     }));
   }
 
-  function toggleCheatDay(dayIndex: number) {
+  function assignCheatMeal(dayIndex: number, mealType: MealType) {
+    const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
+    const day = plan.days[effectiveIdx];
+
+    // Build pool — cheat-flagged recipes only
+    const custom = loadCustomRecipes();
+    const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
+    const combined = [
+      ...custom.filter((r) => !seedIds.has(r.id)),
+      ...ALL_RECIPES,
+    ];
+
+    const pool = combined.filter((r) => r.isCheatDay === true);
+    if (pool.length === 0) return;
+
+    const currentId = day.meals[mealType].recipe?.id;
+    const choices = pool.filter((r) => r.id !== currentId);
+    const finalPool = choices.length > 0 ? choices : pool;
+    const recipe = finalPool[Math.floor(Math.random() * finalPool.length)];
+
     updatePlan((prev) => ({
       ...prev,
-      days: prev.days.map((day, i) =>
-        i !== dayIndex ? day : { ...day, isCheatDay: !day.isCheatDay }
-      ),
+      days: prev.days.map((day, i) => {
+        if (!(sameForAll[mealType] ? true : i === effectiveIdx)) return day;
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe } } };
+      }),
     }));
   }
 
@@ -627,7 +636,14 @@ export default function PlannerPage() {
       (d.meals.dinner.recipe?.macros.calories ?? 0)
     ), 0) / 7
   );
-  const cheatDayCount = plan.days.filter((d) => d.isCheatDay).length;
+  const cheatMealCount = plan.days.reduce(
+    (sum, d) =>
+      sum +
+      (d.meals.breakfast.recipe?.isCheatDay ? 1 : 0) +
+      (d.meals.lunch.recipe?.isCheatDay ? 1 : 0) +
+      (d.meals.dinner.recipe?.isCheatDay ? 1 : 0),
+    0
+  );
 
   return (
     <>
@@ -637,7 +653,7 @@ export default function PlannerPage() {
           <div>
             <h1 className="font-serif text-3xl font-bold text-foreground">Meal Planner</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Click a slot to preview · 🎲 random recipe · ↔ pick manually
+              Click a slot to preview · hover for 🎲 random · 🍕 cheat · ↔ pick
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -718,10 +734,8 @@ export default function PlannerPage() {
                 return (
                   <div key={day.day} className="text-center">
                     <div className={cn(
-                      "rounded-xl p-2 mb-1.5 border transition-all",
-                      day.isCheatDay ? "bg-accent/10 border-accent/30"
-                      : isToday ? "bg-primary/10 border-primary/30"
-                      : "bg-muted/30 border-transparent"
+                      "rounded-xl p-2 border transition-all",
+                      isToday ? "bg-primary/10 border-primary/30" : "bg-muted/30 border-transparent"
                     )}>
                       <p className={cn("text-xs font-bold", isToday ? "text-primary" : "text-foreground")}>
                         {day.day.slice(0, 3).toUpperCase()}
@@ -730,17 +744,6 @@ export default function PlannerPage() {
                         {date.toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
                       </p>
                     </div>
-                    <button
-                      onClick={() => toggleCheatDay(i)}
-                      className={cn(
-                        "w-full text-[10px] font-medium px-1 py-1 rounded-lg border transition-all",
-                        day.isCheatDay
-                          ? "bg-accent/10 text-accent border-accent/30 hover:bg-accent/20"
-                          : "bg-background text-muted-foreground border-border hover:border-accent/40 hover:text-accent"
-                      )}
-                    >
-                      {day.isCheatDay ? "🍕 Cheat" : "Cheat day?"}
-                    </button>
                   </div>
                 );
               })}
@@ -764,11 +767,10 @@ export default function PlannerPage() {
                     <div key={day.day} className="min-h-[130px]">
                       <MealSlotCard
                         recipe={effectiveRecipe}
-                        mealType={type}
-                        isCheatDay={day.isCheatDay}
                         onOpen={() => openPicker(sameForAll[type] ? 0 : di, type)}
                         onPreview={(recipe) => openPreview(recipe, sameForAll[type] ? 0 : di, type)}
                         onRandom={() => assignRandomRecipe(sameForAll[type] ? 0 : di, type)}
+                        onCheatMeal={() => assignCheatMeal(sameForAll[type] ? 0 : di, type)}
                       />
                     </div>
                   );
@@ -789,8 +791,8 @@ export default function PlannerPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Avg cal / day</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 text-center">
-            <p className="text-2xl font-bold text-accent">{cheatDayCount}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Cheat days</p>
+            <p className="text-2xl font-bold text-accent">{cheatMealCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Cheat meals</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4 flex items-center justify-center">
             <Link href="/grocery" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90 text-xs w-full justify-center")}>
@@ -838,7 +840,6 @@ export default function PlannerPage() {
       {pickerTarget && pickerDay && (
         <RecipePickerModal
           mealType={pickerTarget.mealType}
-          isCheatDay={pickerDay.isCheatDay}
           currentRecipe={pickerCurrentRecipe}
           onSelect={assignRecipe}
           onRemove={removeRecipe}
