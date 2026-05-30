@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -48,13 +49,19 @@ export default function Navbar() {
             ))}
           </nav>
 
+          {/* Auth — desktop */}
           <div className="hidden md:flex items-center gap-3">
-            <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-              Sign in
-            </Link>
-            <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
-              Get started free
-            </Link>
+            <SignedOut>
+              <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                Sign in
+              </Link>
+              <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+                Get started free
+              </Link>
+            </SignedOut>
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
           </div>
 
           <button
@@ -72,6 +79,7 @@ export default function Navbar() {
           </button>
         </div>
 
+        {/* Mobile menu */}
         {mobileOpen && (
           <div className="md:hidden border-t border-border py-4 space-y-1">
             {NAV_LINKS.map((link) => (
@@ -89,13 +97,18 @@ export default function Navbar() {
                 {link.label}
               </Link>
             ))}
-            <div className="flex gap-3 pt-3 px-3">
-              <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-                Sign in
-              </Link>
-              <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
-                Get started
-              </Link>
+            <div className="flex items-center gap-3 pt-3 px-3">
+              <SignedOut>
+                <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                  Sign in
+                </Link>
+                <Link href="/sign-up" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+                  Get started
+                </Link>
+              </SignedOut>
+              <SignedIn>
+                <UserButton afterSignOutUrl="/" />
+              </SignedIn>
             </div>
           </div>
         )}
