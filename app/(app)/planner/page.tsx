@@ -610,13 +610,28 @@ export default function PlannerPage() {
 
   async function regenerateMeal(dayIndex: number, mealType: MealType) {
     setRegeneratingSlot({ dayIndex, mealType });
+    const CUISINES = [
+      "Mediterranean", "Thai", "Japanese", "Mexican", "Indian",
+      "Italian", "Korean", "Middle Eastern", "Greek", "Vietnamese",
+      "American", "French", "Moroccan", "Chinese", "Spanish",
+    ];
     try {
       const day = plan.days[dayIndex];
-      const prompt = `A healthy ${mealType} recipe${day.isCheatDay ? " (cheat day, indulgent is fine)" : ""}`;
+      const currentRecipe = day.meals[mealType].recipe;
+      const cuisine = CUISINES[Math.floor(Math.random() * CUISINES.length)];
+      const avoidNote = currentRecipe
+        ? ` Do NOT make "${currentRecipe.title}" — create something completely different.`
+        : "";
+      const prompt = `A creative ${cuisine} ${mealType} recipe${
+        day.isCheatDay
+          ? " (indulgent cheat day, comfort food is great)"
+          : " (healthy and nutritious)"
+      }.${avoidNote}`;
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "single", prompt }),
+        cache: "no-store",
       });
       const data = await res.json();
       if (res.ok && data.recipe) {
