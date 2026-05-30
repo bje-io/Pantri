@@ -413,6 +413,8 @@ function MealSlotCard({
     <div className="relative group w-full min-h-[84px]">
       <button
         onClick={() => onPreview(recipe)}
+        onDoubleClick={() => window.open(`/recipes/${recipe.id}`, "_blank")}
+        title="Click to preview · Double-click to open full recipe"
         className={cn(
           "w-full rounded-xl border p-2.5 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[84px]",
           isCheatDay

@@ -286,8 +286,10 @@ function RecipeCard({
 
   return (
     <div
+      onDoubleClick={() => window.open(`/recipes/${recipe.id}`, "_blank")}
+      title="Double-click to open in new tab"
       className={cn(
-        "rounded-2xl border bg-card overflow-hidden hover:shadow-md transition-all group",
+        "rounded-2xl border bg-card overflow-hidden hover:shadow-md transition-all group cursor-pointer",
         isCheat ? "border-accent/40" : "border-border hover:border-primary/30"
       )}
     >
