@@ -53,7 +53,7 @@ export default function Navbar() {
           {/* Auth — desktop */}
           <div className="hidden md:flex items-center gap-3">
             {isSignedIn ? (
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             ) : (
               <>
                 <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
@@ -101,7 +101,7 @@ export default function Navbar() {
             ))}
             <div className="flex items-center gap-3 pt-3 px-3">
               {isSignedIn ? (
-                <UserButton afterSignOutUrl="/" />
+                <UserButton />
               ) : (
                 <>
                   <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
