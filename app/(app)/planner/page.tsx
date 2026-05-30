@@ -686,11 +686,11 @@ export default function PlannerPage() {
     const day = plan.days[effectiveIdx];
     const combined = buildCombinedPool();
 
-    // Cheat meals matching this meal type; fall back to any cheat meal
-    const typeCheat = combined.filter((r) => r.isCheatDay === true && r.mealType.includes(mealType));
-    const anyCheat  = combined.filter((r) => r.isCheatDay === true);
-    const pool = typeCheat.length > 0 ? typeCheat : anyCheat;
-    if (pool.length === 0) return;
+    // Only pick cheat meals that match this specific meal type — never cross-place
+    const pool = combined.filter(
+      (r) => r.isCheatDay === true && Array.isArray(r.mealType) && r.mealType.includes(mealType)
+    );
+    if (pool.length === 0) return; // no cheat meal exists for this meal type, do nothing
 
     const currentId = day.meals[mealType].recipe?.id;
     const choices = pool.filter((r) => r.id !== currentId);
