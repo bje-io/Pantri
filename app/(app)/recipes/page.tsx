@@ -291,6 +291,7 @@ function RecipeCard({
   onPreview: () => void;
   onToggleMealType: (t: MealType) => void;
 }) {
+  const [labelOpen, setLabelOpen] = useState(false);
   const totalTime = recipe.prepTime + recipe.cookTime;
   const isCheat = recipe.isCheatDay;
 
@@ -306,26 +307,37 @@ function RecipeCard({
 
       <div className="p-5">
         <div className="flex items-start justify-between gap-2 mb-3">
-          {/* Meal type toggles */}
-          <div className="flex flex-wrap gap-1">
-            {MEAL_TYPE_OPTIONS.map(({ type, emoji, label }) => {
-              const active = activeMealTypes.includes(type);
+          {/* Meal type pills + label toggle */}
+          <div className="flex flex-wrap items-center gap-1">
+            {activeMealTypes.map((type) => {
+              const opt = MEAL_TYPE_OPTIONS.find((o) => o.type === type)!;
               return (
-                <button
+                <span
                   key={type}
-                  onClick={() => onToggleMealType(type)}
-                  title={active ? `Remove ${label}` : `Tag as ${label}`}
-                  className={cn(
-                    "text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all",
-                    active
-                      ? "bg-primary/10 text-primary border-primary/30"
-                      : "bg-muted text-muted-foreground border-transparent hover:border-primary/20 hover:text-foreground"
-                  )}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
                 >
-                  {emoji} {label}
-                </button>
+                  {opt.emoji} {opt.label}
+                </span>
               );
             })}
+            {isCheat && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
+                🍕 Cheat day
+              </span>
+            )}
+            {/* Expand/collapse label editor */}
+            <button
+              onClick={() => setLabelOpen((o) => !o)}
+              title="Edit meal labels"
+              className={cn(
+                "text-[10px] font-medium px-2 py-0.5 rounded-full border transition-all",
+                labelOpen
+                  ? "bg-primary/10 text-primary border-primary/30"
+                  : "border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              )}
+            >
+              {labelOpen ? "✕ Done" : "+ Label"}
+            </button>
           </div>
           <button
             onClick={onSave}
@@ -338,6 +350,29 @@ function RecipeCard({
             {saved ? "♥" : "♡"}
           </button>
         </div>
+
+        {/* Inline label editor */}
+        {labelOpen && (
+          <div className="flex gap-1.5 mb-3 flex-wrap">
+            {MEAL_TYPE_OPTIONS.map(({ type, emoji, label }) => {
+              const active = activeMealTypes.includes(type);
+              return (
+                <button
+                  key={type}
+                  onClick={() => onToggleMealType(type)}
+                  className={cn(
+                    "text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-all",
+                    active
+                      ? "bg-primary/10 text-primary border-primary/30"
+                      : "bg-muted text-muted-foreground border-transparent hover:border-primary/20 hover:text-foreground"
+                  )}
+                >
+                  {active ? "✓ " : ""}{emoji} {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Title — click to preview */}
         <button
