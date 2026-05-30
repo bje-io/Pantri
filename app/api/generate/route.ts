@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     if (mode === "single") {
       const message = await client.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-6",
         max_tokens: 1500,
         messages: [
           {
@@ -60,7 +60,7 @@ Return ONLY a valid JSON object with this exact structure, no extra text:
     } else {
       // Week mode
       const message = await client.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-6",
         max_tokens: 4096,
         messages: [
           {
