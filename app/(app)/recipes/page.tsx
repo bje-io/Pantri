@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ALL_RECIPES, type MealType, type Recipe } from "@/lib/meal-data";
-import { loadCustomRecipes } from "@/lib/local-store";
+import { loadCustomRecipes, loadRecipeTags, saveRecipeTags } from "@/lib/local-store";
 
 const MEAL_FILTERS: { type: MealType | "all"; label: string; emoji: string }[] = [
   { type: "all", label: "All", emoji: "🍽️" },
@@ -268,28 +268,36 @@ function AddToWeekMenu({ recipe }: { recipe: Recipe }) {
   );
 }
 
+const MEAL_TYPE_OPTIONS: { type: MealType; emoji: string; label: string }[] = [
+  { type: "breakfast", emoji: "🌅", label: "Breakfast" },
+  { type: "lunch",     emoji: "☀️", label: "Lunch" },
+  { type: "dinner",    emoji: "🌙", label: "Dinner" },
+];
+
 // ── Recipe Card ───────────────────────────────────────────────────
 
 function RecipeCard({
   recipe,
+  activeMealTypes,
   saved,
   onSave,
   onPreview,
+  onToggleMealType,
 }: {
   recipe: Recipe;
+  activeMealTypes: MealType[];
   saved: boolean;
   onSave: () => void;
   onPreview: () => void;
+  onToggleMealType: (t: MealType) => void;
 }) {
   const totalTime = recipe.prepTime + recipe.cookTime;
   const isCheat = recipe.isCheatDay;
 
   return (
     <div
-      onDoubleClick={() => window.open(`/recipes/${recipe.id}`, "_blank")}
-      title="Double-click to open in new tab"
       className={cn(
-        "rounded-2xl border bg-card overflow-hidden hover:shadow-md transition-all group cursor-pointer",
+        "rounded-2xl border bg-card overflow-hidden hover:shadow-md transition-all group",
         isCheat ? "border-accent/40" : "border-border hover:border-primary/30"
       )}
     >
@@ -298,20 +306,26 @@ function RecipeCard({
 
       <div className="p-5">
         <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="flex flex-wrap gap-1.5">
-            {recipe.mealType.map((t) => (
-              <span
-                key={t}
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize"
-              >
-                {t === "breakfast" ? "🌅" : t === "lunch" ? "☀️" : "🌙"} {t}
-              </span>
-            ))}
-            {isCheat && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
-                🍕 Cheat day
-              </span>
-            )}
+          {/* Meal type toggles */}
+          <div className="flex flex-wrap gap-1">
+            {MEAL_TYPE_OPTIONS.map(({ type, emoji, label }) => {
+              const active = activeMealTypes.includes(type);
+              return (
+                <button
+                  key={type}
+                  onClick={() => onToggleMealType(type)}
+                  title={active ? `Remove ${label}` : `Tag as ${label}`}
+                  className={cn(
+                    "text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all",
+                    active
+                      ? "bg-primary/10 text-primary border-primary/30"
+                      : "bg-muted text-muted-foreground border-transparent hover:border-primary/20 hover:text-foreground"
+                  )}
+                >
+                  {emoji} {label}
+                </button>
+              );
+            })}
           </div>
           <button
             onClick={onSave}
@@ -328,14 +342,14 @@ function RecipeCard({
         {/* Title — click to preview */}
         <button
           onClick={onPreview}
-          className="block text-left w-full group-hover:text-primary transition-colors mb-1"
+          className="block text-left w-full mb-1"
         >
           <h3 className="font-serif text-lg font-bold text-foreground leading-snug hover:text-primary transition-colors">
             {recipe.title}
           </h3>
         </button>
         <p className="text-xs text-muted-foreground mb-3">
-          {recipe.cuisine} · {totalTime} min
+          {recipe.cuisine}{totalTime > 0 ? ` · ${totalTime} min` : ""}
         </p>
 
         {/* Macros grid */}
@@ -398,14 +412,22 @@ export default function RecipesPage() {
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
 
   // Load AI-generated recipes from localStorage
-  const [customRecipes, setCustomRecipes] = useState<Recipe[]>(() =>
-    loadCustomRecipes()
+  const [customRecipes] = useState<Recipe[]>(() => loadCustomRecipes());
+
+  // Load user-set meal-type tags (overrides / additions per recipe id)
+  const [tagOverrides, setTagOverrides] = useState<Record<string, MealType[]>>(
+    () => loadRecipeTags()
   );
 
   // Merge: custom AI recipes first, then seeded recipes (no duplicates)
   const seedIds = new Set(ALL_RECIPES.map((r) => r.id));
   const uniqueCustom = customRecipes.filter((r) => !seedIds.has(r.id));
   const allRecipes = [...uniqueCustom, ...ALL_RECIPES];
+
+  // Resolve the effective meal types for a recipe (override wins if set)
+  function effectiveMealTypes(r: Recipe): MealType[] {
+    return tagOverrides[r.id] ?? r.mealType;
+  }
 
   function toggleSave(id: string) {
     setSaved((s) => {
@@ -415,8 +437,20 @@ export default function RecipesPage() {
     });
   }
 
+  function toggleMealType(id: string, type: MealType) {
+    setTagOverrides((prev) => {
+      const current = prev[id] ?? allRecipes.find((r) => r.id === id)?.mealType ?? [];
+      const next = current.includes(type)
+        ? current.filter((t) => t !== type)
+        : [...current, type];
+      saveRecipeTags(id, next);
+      return { ...prev, [id]: next };
+    });
+  }
+
   const filtered = allRecipes.filter((r) => {
-    if (mealFilter !== "all" && !r.mealType.includes(mealFilter)) return false;
+    const mt = effectiveMealTypes(r);
+    if (mealFilter !== "all" && !mt.includes(mealFilter)) return false;
     if (cuisineFilter !== "All" && r.cuisine !== cuisineFilter) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()))
       return false;
@@ -521,9 +555,11 @@ export default function RecipesPage() {
                 <RecipeCard
                   key={r.id}
                   recipe={r}
+                  activeMealTypes={effectiveMealTypes(r)}
                   saved={true}
                   onSave={() => toggleSave(r.id)}
                   onPreview={() => setPreviewRecipe(r)}
+                  onToggleMealType={(t) => toggleMealType(r.id, t)}
                 />
               ))}
             </div>
@@ -552,9 +588,11 @@ export default function RecipesPage() {
               <RecipeCard
                 key={r.id}
                 recipe={r}
+                activeMealTypes={effectiveMealTypes(r)}
                 saved={saved.has(r.id)}
                 onSave={() => toggleSave(r.id)}
                 onPreview={() => setPreviewRecipe(r)}
+                onToggleMealType={(t) => toggleMealType(r.id, t)}
               />
             ))}
           </div>
