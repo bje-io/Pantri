@@ -381,11 +381,11 @@ function MealSlotCard({
 }) {
   if (!recipe) {
     return (
-      <div className="relative w-full min-h-[84px]">
+      <div className="relative w-full min-h-[130px]">
         <button
           onClick={onOpen}
           className={cn(
-            "w-full h-full min-h-[84px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground group",
+            "w-full h-full min-h-[130px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground group",
             isCheatDay
               ? "border-accent/30 hover:border-accent/60 hover:bg-accent/5"
               : "border-border hover:border-primary/40 hover:bg-primary/5"
@@ -410,44 +410,47 @@ function MealSlotCard({
   }
 
   return (
-    <div className="relative group w-full min-h-[84px]">
+    <div className="relative group w-full min-h-[130px]">
       <button
         onClick={() => onPreview(recipe)}
-        onDoubleClick={() => window.open(`/recipes/${recipe.id}`, "_blank")}
-        title="Click to preview · Double-click to open full recipe"
         className={cn(
-          "w-full rounded-xl border p-2.5 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[84px]",
+          "w-full rounded-xl border p-3 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[130px] flex flex-col",
           isCheatDay
             ? "border-accent/40 bg-accent/5 hover:border-accent/70"
             : "border-border bg-card hover:border-primary/30"
         )}
       >
-        {isCheatDay && (
-          <span className="absolute top-1.5 left-1.5 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
-            CHEAT
-          </span>
-        )}
-        <p className={cn(
-          "text-[11px] font-semibold text-foreground leading-tight line-clamp-2",
-          isCheatDay ? "mt-4" : "pr-10"
-        )}>
-          {recipe.title}
-        </p>
-        <p className="text-[10px] text-muted-foreground mt-1">{recipe.cuisine}</p>
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <span className="text-[10px] text-muted-foreground">{recipe.macros.calories} cal</span>
-          <span className="text-[10px] text-muted-foreground">·</span>
-          <span className="text-[10px] text-muted-foreground">{recipe.macros.protein}g pro</span>
+        {/* Title row */}
+        <div className={cn("pr-14", isCheatDay && "pt-5")}>
+          {isCheatDay && (
+            <span className="absolute top-2 left-2 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
+              CHEAT
+            </span>
+          )}
+          <p className="text-xs font-semibold text-foreground leading-tight line-clamp-2">
+            {recipe.title}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{recipe.cuisine}</p>
         </div>
-        {recipe.source === "ai" && (
-          <span className="absolute bottom-1.5 left-1.5 text-[8px] font-medium text-primary/60 bg-primary/5 px-1 py-0.5 rounded-full">
-            ✨ Sage
-          </span>
-        )}
+
+        {/* Macro grid — per serving */}
+        <div className="grid grid-cols-4 gap-1 mt-auto pt-2.5">
+          {[
+            { label: "cal",  val: recipe.macros.calories },
+            { label: "pro",  val: `${recipe.macros.protein}g` },
+            { label: "carb", val: `${recipe.macros.carbs}g` },
+            { label: "fat",  val: `${recipe.macros.fat}g` },
+          ].map((m) => (
+            <div key={m.label} className="text-center rounded-lg bg-muted/50 py-1">
+              <p className="text-[11px] font-bold text-foreground leading-none">{m.val}</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
       </button>
 
       {/* Hover actions — top right */}
-      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
           onClick={(e) => { e.stopPropagation(); onRandom(); }}
           title="Surprise me — random recipe"
@@ -464,11 +467,11 @@ function MealSlotCard({
         </button>
       </div>
 
-      {/* Pop-out button — bottom, always visible */}
+      {/* Pop-out button — always visible */}
       <button
         onClick={(e) => { e.stopPropagation(); window.open(`/recipes/${recipe.id}`, "_blank"); }}
         title="Open full recipe in new tab"
-        className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground hover:text-primary shadow-sm transition-all z-10"
+        className="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-md bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground hover:text-primary shadow-sm transition-all z-10"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
         Open
@@ -758,7 +761,7 @@ export default function PlannerPage() {
                     ? plan.days[0].meals[type].recipe
                     : day.meals[type].recipe;
                   return (
-                    <div key={day.day} className="min-h-[84px]">
+                    <div key={day.day} className="min-h-[130px]">
                       <MealSlotCard
                         recipe={effectiveRecipe}
                         mealType={type}
