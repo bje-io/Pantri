@@ -135,7 +135,7 @@ export default function GeneratePage() {
           </h1>
         </div>
         <p className="text-muted-foreground">
-          Describe what you want — a single meal or a full week — and Claude
+          Describe what you want — a single meal or a full week — and Sage
           will build it for you.
         </p>
       </div>
@@ -542,7 +542,7 @@ export default function GeneratePage() {
 
             {state === "loading" && (
               <p className="text-center text-xs text-muted-foreground mt-2 animate-pulse">
-                Claude is cooking up something delicious
+                Sage is cooking up something delicious
                 {mode === "week" ? " — this may take a few seconds" : ""}…
               </p>
             )}

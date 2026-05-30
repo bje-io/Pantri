@@ -14,7 +14,7 @@ const FEATURES = [
   {
     icon: "✨",
     title: "AI Meal Generator",
-    description: "Tell Claude what you're craving — or just your macros — and get a full recipe in seconds.",
+    description: "Tell Sage what you're craving — or just your macros — and get a full recipe in seconds.",
   },
   {
     icon: "🛒",
@@ -49,7 +49,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-20 pb-24 text-center relative">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm text-primary font-medium mb-8">
             <span>✨</span>
-            <span>Powered by Claude AI</span>
+            <span>Powered by Sage AI</span>
           </div>
           <h1 className="font-serif text-5xl sm:text-6xl lg:text-7xl font-bold text-foreground leading-tight tracking-tight max-w-4xl mx-auto">
             Your AI-powered{" "}
@@ -194,7 +194,7 @@ export default function HomePage() {
                 <div className="h-1 w-1 rounded-full bg-current animate-bounce" />
                 <div className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:0.1s]" />
                 <div className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:0.2s]" />
-                <span>Claude is generating your recipe...</span>
+                <span>Sage is generating your recipe...</span>
               </div>
               <div className="rounded-xl bg-primary-foreground/10 p-4 space-y-2">
                 <p className="font-serif font-bold text-primary-foreground text-lg">Shrimp Pad Thai</p>

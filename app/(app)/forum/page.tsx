@@ -58,7 +58,7 @@ const INITIAL_POSTS: ForumPost[] = [
     category: "ai-prompt-tips",
     categoryLabel: "AI Prompt Tips",
     title: "Best prompt I've found for Thai food under 500 calories",
-    body: "\"High protein Thai dinner, under 500 calories, ready in 30 minutes, no peanuts\" gets you amazing results every single time. Claude nails the balance between authentic flavors and lean macros.",
+    body: "\"High protein Thai dinner, under 500 calories, ready in 30 minutes, no peanuts\" gets you amazing results every single time. Sage nails the balance between authentic flavors and lean macros.",
     author: "David K.",
     avatarInitials: "DK",
     upvotes: 47,
