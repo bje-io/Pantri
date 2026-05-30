@@ -519,27 +519,6 @@ export default function RecipesPage() {
           </div>
         )}
 
-        {/* AI Generated recipes */}
-        {uniqueCustom.length > 0 && (
-          <div className="mb-10">
-            <h2 className="font-serif text-xl font-bold text-foreground mb-4 flex items-center gap-2">
-              <span>✨</span> Created by Sage
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {uniqueCustom.map((r) => (
-                <RecipeCard
-                  key={r.id}
-                  recipe={r}
-                  saved={saved.has(r.id)}
-                  onSave={() => toggleSave(r.id)}
-                  onPreview={() => setPreviewRecipe(r)}
-                />
-              ))}
-            </div>
-            <div className="border-t border-border mt-8 mb-6" />
-          </div>
-        )}
-
         {/* All recipes */}
         <h2 className="font-serif text-xl font-bold text-foreground mb-4">
           {search || mealFilter !== "all" || cuisineFilter !== "All"
