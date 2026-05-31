@@ -607,6 +607,7 @@ export default function PlannerPage() {
     if (p) setKitchenProfile(p);
   }, []);
 
+  const [confirmReset, setConfirmReset] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PickerTarget | null>(null);
@@ -783,6 +784,55 @@ export default function PlannerPage() {
     setSameForAll((prev) => ({ ...prev, [mealType]: !prev[mealType] }));
   }
 
+  /** Fill every slot in the current week with goal-aware, kitchen-filtered recipes. */
+  function randomizeAllMeals() {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      // Auto-cancel the confirm state after 3 s if user doesn't click again
+      setTimeout(() => setConfirmReset(false), 3000);
+      return;
+    }
+    setConfirmReset(false);
+
+    const combined = buildCombinedPool();
+    const perMealTarget = derivedCalories(kitchenGoals.macros) / 3;
+    const lo = perMealTarget * 0.9;
+    const hi = perMealTarget * 1.1;
+
+    // Build a shuffled pool per meal type (kitchen-filtered + goal-aware)
+    const pools = {} as Record<MealType, Recipe[]>;
+    for (const { type } of MEAL_LABELS) {
+      const base = applyKitchenFilters(
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+      );
+      const goal = base.filter((r) => r.macros.calories >= lo && r.macros.calories <= hi);
+      const src  = goal.length > 0 ? goal : base;
+      // Fisher-Yates shuffle for maximum variety
+      const arr = [...src];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      pools[type] = arr;
+    }
+
+    updatePlan((prev) => ({
+      ...prev,
+      days: prev.days.map((day, di) => {
+        const newMeals = { ...day.meals };
+        for (const { type } of MEAL_LABELS) {
+          // sameForAll: only assign day 0; other days will mirror it via display logic
+          if (sameForAll[type] && di > 0) continue;
+          const pool = pools[type];
+          if (pool.length === 0) continue;
+          // Cycle through shuffled pool so all 7 days get variety
+          newMeals[type] = { recipe: pool[di % pool.length] };
+        }
+        return { ...day, meals: newMeals };
+      }),
+    }));
+  }
+
   const pickerDay = pickerTarget ? plan.days[pickerTarget.dayIndex] : null;
   const pickerCurrentRecipe =
     pickerTarget && pickerDay ? pickerDay.meals[pickerTarget.mealType].recipe : null;
@@ -863,6 +913,18 @@ export default function PlannerPage() {
             <Link href="/grocery" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               🛒 Grocery list
             </Link>
+            <button
+              onClick={randomizeAllMeals}
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "transition-all",
+                confirmReset
+                  ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground animate-pulse"
+                  : "bg-muted hover:bg-muted/80 text-foreground border border-border"
+              )}
+            >
+              {confirmReset ? "⚠️ Confirm reset?" : "🎲 Randomize week"}
+            </button>
             <Link
               href="/planner/generate"
               className={cn(buttonVariants({ size: "sm" }), "bg-accent hover:bg-accent/90 text-accent-foreground")}
