@@ -10,8 +10,19 @@ import { loadKitchenProfile, saveKitchenProfile, derivedCalories } from "@/lib/l
 /** macros are in GRAMS; calories are always derived (protein×4 + carbs×4 + fat×9) */
 type MacroGrams = { protein: number; carbs: number; fat: number };
 
+type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very-active";
+
 type KitchenProfile = {
+  // ── Body stats ──
+  heightCm: number;    // stored in cm; display converts to ft/in when units === "imperial"
+  weightKg: number;    // stored in kg; display converts to lbs when units === "imperial"
+  age: number;
+  sex: "male" | "female";
+  activityLevel: ActivityLevel;
+  units: "metric" | "imperial";
+  // ── Nutrition ──
   macros: MacroGrams;
+  // ── Meal prefs ──
   servings: number;
   dietaryPrefs: string[];
   allergies: string[];
@@ -26,64 +37,79 @@ type KitchenProfile = {
 
 // ── Options ───────────────────────────────────────────────────────
 
+const ACTIVITY_OPTIONS: { id: ActivityLevel; label: string; desc: string; emoji: string; multiplier: number }[] = [
+  { id: "sedentary",   label: "Sedentary",    desc: "Desk job, little or no exercise",      emoji: "🪑", multiplier: 1.2   },
+  { id: "light",       label: "Lightly Active",desc: "Light exercise 1–3 days/week",        emoji: "🚶", multiplier: 1.375 },
+  { id: "moderate",    label: "Moderately Active", desc: "Exercise 3–5 days/week",          emoji: "🏃", multiplier: 1.55  },
+  { id: "active",      label: "Very Active",  desc: "Hard exercise 6–7 days/week",          emoji: "🏋️", multiplier: 1.725 },
+  { id: "very-active", label: "Extremely Active", desc: "Physical job + hard daily training", emoji: "⚡", multiplier: 1.9 },
+];
+
 const DIETARY_OPTIONS = [
   { id: "vegetarian", label: "Vegetarian", emoji: "🥦" },
-  { id: "vegan", label: "Vegan", emoji: "🌱" },
-  { id: "gluten-free", label: "Gluten-Free", emoji: "🌾" },
+  { id: "vegan",      label: "Vegan",      emoji: "🌱" },
+  { id: "gluten-free",label: "Gluten-Free",emoji: "🌾" },
   { id: "dairy-free", label: "Dairy-Free", emoji: "🥛" },
-  { id: "low-carb", label: "Low Carb", emoji: "🍞" },
-  { id: "keto", label: "Keto", emoji: "🥑" },
-  { id: "paleo", label: "Paleo", emoji: "🦴" },
-  { id: "halal", label: "Halal", emoji: "☪️" },
+  { id: "low-carb",   label: "Low Carb",   emoji: "🍞" },
+  { id: "keto",       label: "Keto",       emoji: "🥑" },
+  { id: "paleo",      label: "Paleo",      emoji: "🦴" },
+  { id: "halal",      label: "Halal",      emoji: "☪️"  },
 ];
 
 const ALLERGY_OPTIONS = [
-  { id: "nuts", label: "Tree Nuts" },
-  { id: "peanuts", label: "Peanuts" },
-  { id: "shellfish", label: "Shellfish" },
-  { id: "fish", label: "Fish" },
-  { id: "eggs", label: "Eggs" },
-  { id: "soy", label: "Soy" },
-  { id: "sesame", label: "Sesame" },
+  { id: "nuts",     label: "Tree Nuts" },
+  { id: "peanuts",  label: "Peanuts"   },
+  { id: "shellfish",label: "Shellfish" },
+  { id: "fish",     label: "Fish"      },
+  { id: "eggs",     label: "Eggs"      },
+  { id: "soy",      label: "Soy"       },
+  { id: "sesame",   label: "Sesame"    },
 ];
 
 const CUISINE_OPTIONS = [
-  { id: "Japanese", emoji: "🇯🇵" },
-  { id: "Mexican", emoji: "🇲🇽" },
-  { id: "Greek", emoji: "🇬🇷" },
-  { id: "Thai", emoji: "🇹🇭" },
-  { id: "Indian", emoji: "🇮🇳" },
-  { id: "Italian", emoji: "🇮🇹" },
-  { id: "American", emoji: "🇺🇸" },
+  { id: "Japanese",      emoji: "🇯🇵" },
+  { id: "Mexican",       emoji: "🇲🇽" },
+  { id: "Greek",         emoji: "🇬🇷" },
+  { id: "Thai",          emoji: "🇹🇭" },
+  { id: "Indian",        emoji: "🇮🇳" },
+  { id: "Italian",       emoji: "🇮🇹" },
+  { id: "American",      emoji: "🇺🇸" },
   { id: "Mediterranean", emoji: "🌊" },
-  { id: "Chinese", emoji: "🇨🇳" },
-  { id: "Korean", emoji: "🇰🇷" },
-  { id: "French", emoji: "🇫🇷" },
-  { id: "Middle Eastern", emoji: "🌙" },
+  { id: "Chinese",       emoji: "🇨🇳" },
+  { id: "Korean",        emoji: "🇰🇷" },
+  { id: "French",        emoji: "🇫🇷" },
+  { id: "Middle Eastern",emoji: "🌙" },
 ];
 
 const CHEAT_PREF_OPTIONS = [
-  { id: "burgers", label: "Burgers & Fries", emoji: "🍔" },
-  { id: "pizza", label: "Pizza", emoji: "🍕" },
-  { id: "tacos", label: "Street Tacos", emoji: "🌮" },
-  { id: "pasta", label: "Pasta", emoji: "🍝" },
-  { id: "sushi", label: "Sushi", emoji: "🍣" },
-  { id: "bbq", label: "BBQ", emoji: "🍖" },
-  { id: "desserts", label: "Desserts", emoji: "🍰" },
-  { id: "brunch", label: "Brunch", emoji: "🥞" },
+  { id: "burgers",  label: "Burgers & Fries", emoji: "🍔" },
+  { id: "pizza",    label: "Pizza",           emoji: "🍕" },
+  { id: "tacos",    label: "Street Tacos",    emoji: "🌮" },
+  { id: "pasta",    label: "Pasta",           emoji: "🍝" },
+  { id: "sushi",    label: "Sushi",           emoji: "🍣" },
+  { id: "bbq",      label: "BBQ",             emoji: "🍖" },
+  { id: "desserts", label: "Desserts",        emoji: "🍰" },
+  { id: "brunch",   label: "Brunch",          emoji: "🥞" },
 ];
 
 const GOAL_OPTIONS = [
-  { id: "lose-weight", label: "Lose Weight", emoji: "⬇️", desc: "Calorie deficit, high protein, smart carbs" },
-  { id: "maintain", label: "Maintain", emoji: "⚖️", desc: "Balanced macros, sustainable variety" },
-  { id: "build-muscle", label: "Build Muscle", emoji: "💪", desc: "High protein, calorie surplus, nutrient-dense" },
-  { id: "eat-healthy", label: "Eat Healthier", emoji: "🥗", desc: "Whole foods, less processed, more variety" },
-  { id: "custom", label: "Custom", emoji: "⚙️", desc: "Set your own targets manually" },
+  { id: "lose-weight",  label: "Lose Weight",   emoji: "⬇️", desc: "Calorie deficit, high protein, smart carbs"     },
+  { id: "maintain",     label: "Maintain",       emoji: "⚖️", desc: "Balanced macros, sustainable variety"          },
+  { id: "build-muscle", label: "Build Muscle",   emoji: "💪", desc: "High protein, calorie surplus, nutrient-dense" },
+  { id: "eat-healthy",  label: "Eat Healthier",  emoji: "🥗", desc: "Whole foods, less processed, more variety"     },
+  { id: "custom",       label: "Custom",         emoji: "⚙️", desc: "Set your own targets manually"                 },
 ] as const;
 
-// Gram-based macro presets per goal (calories are derived: pro×4 + carbs×4 + fat×9)
-// lose-weight  ≈ 1,597 cal  |  maintain    ≈ 2,003 cal
-// build-muscle ≈ 2,507 cal  |  eat-healthy ≈ 1,905 cal
+// Macro calorie-ratio targets per goal (for TDEE-based auto-fill)
+const GOAL_MACRO_RATIOS: Record<string, { p: number; c: number; f: number }> = {
+  "lose-weight":  { p: 0.40, c: 0.35, f: 0.25 },
+  maintain:       { p: 0.30, c: 0.40, f: 0.30 },
+  "build-muscle": { p: 0.35, c: 0.45, f: 0.20 },
+  "eat-healthy":  { p: 0.25, c: 0.50, f: 0.25 },
+  custom:         { p: 0.30, c: 0.40, f: 0.30 },
+};
+
+// Static gram fallbacks (used when no body stats are entered)
 const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
   "lose-weight":  { macros: { protein: 130, carbs: 150, fat: 53 } },
   maintain:       { macros: { protein: 150, carbs: 200, fat: 67 } },
@@ -91,6 +117,51 @@ const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
   "eat-healthy":  { macros: { protein: 140, carbs: 190, fat: 65 } },
   custom: {},
 };
+
+// ── TDEE helpers ──────────────────────────────────────────────────
+
+/** Mifflin-St Jeor BMR × activity multiplier → TDEE */
+function calcTDEE(p: KitchenProfile): number | null {
+  if (!p.heightCm || !p.weightKg || !p.age) return null;
+  const bmr =
+    p.sex === "male"
+      ? 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + 5
+      : 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age - 161;
+  const multiplier = ACTIVITY_OPTIONS.find((a) => a.id === p.activityLevel)?.multiplier ?? 1.55;
+  return Math.round(bmr * multiplier);
+}
+
+/** Adjust TDEE for the selected goal */
+function goalAdjustedCalories(tdee: number, goal: string): number {
+  if (goal === "lose-weight")  return Math.max(1200, Math.round(tdee - 500));
+  if (goal === "build-muscle") return Math.round(tdee + 300);
+  return Math.round(tdee);
+}
+
+/** Convert goal-adjusted calories → macro grams using goal ratio */
+function calsToMacros(calories: number, goal: string): MacroGrams {
+  const r = GOAL_MACRO_RATIOS[goal] ?? GOAL_MACRO_RATIOS.maintain;
+  return {
+    protein: Math.round((calories * r.p) / 4),
+    carbs:   Math.round((calories * r.c) / 4),
+    fat:     Math.round((calories * r.f) / 9),
+  };
+}
+
+// ── Unit display helpers ──────────────────────────────────────────
+
+function fmtHeight(cm: number, units: "metric" | "imperial"): string {
+  if (units === "metric") return `${cm} cm`;
+  const totalIn = cm / 2.54;
+  const ft   = Math.floor(totalIn / 12);
+  const inch = Math.round(totalIn % 12);
+  return `${ft}'${inch}"`;
+}
+
+function fmtWeight(kg: number, units: "metric" | "imperial"): string {
+  if (units === "metric") return `${kg} kg`;
+  return `${Math.round(kg * 2.20462)} lbs`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -106,17 +177,7 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
   );
 }
 
-function Toggle({
-  active,
-  onToggle,
-  label,
-  emoji,
-}: {
-  active: boolean;
-  onToggle: () => void;
-  label: string;
-  emoji?: string;
-}) {
+function Toggle({ active, onToggle, label, emoji }: { active: boolean; onToggle: () => void; label: string; emoji?: string }) {
   return (
     <button
       onClick={onToggle}
@@ -137,7 +198,16 @@ function Toggle({
 // ── Main page ─────────────────────────────────────────────────────
 
 const DEFAULT_PROFILE: KitchenProfile = {
-  macros: { protein: 150, carbs: 200, fat: 61 }, // ≈ 1,949 cal
+  // Body stats — sensible defaults the user should personalise
+  heightCm: 170,
+  weightKg: 75,
+  age: 30,
+  sex: "male",
+  activityLevel: "moderate",
+  units: "metric",
+  // Nutrition — matches eat-healthy TDEE-based preset at defaults (≈ 1,949 cal)
+  macros: { protein: 150, carbs: 200, fat: 61 },
+  // Meal prefs
   servings: 2,
   dietaryPrefs: [],
   allergies: [],
@@ -177,17 +247,38 @@ export default function KitchenPage() {
   }
 
   function selectGoal(goal: KitchenProfile["goal"]) {
-    const defaults = GOAL_DEFAULTS[goal] ?? {};
-    setProfile((p) => ({ ...p, goal, ...defaults }));
+    const tdee = calcTDEE(profile);
+    if (tdee && goal !== "custom") {
+      // Auto-set macros from TDEE when body stats are available
+      const targetCals = goalAdjustedCalories(tdee, goal);
+      const macros = calsToMacros(targetCals, goal);
+      setProfile((p) => ({ ...p, goal, macros }));
+    } else {
+      // Fall back to static gram presets
+      const defaults = GOAL_DEFAULTS[goal] ?? {};
+      setProfile((p) => ({ ...p, goal, ...defaults }));
+    }
     setSaved(false);
   }
 
-  const derivedCals = derivedCalories(profile.macros);
-  // calorie share of each macro (for the visual bar)
-  const proCals  = profile.macros.protein * 4;
-  const carbCals = profile.macros.carbs   * 4;
-  const fatCals  = profile.macros.fat     * 9;
-  const totalMacroCals = proCals + carbCals + fatCals || 1; // guard /0
+  function applyTDEEToMacros() {
+    const tdee = calcTDEE(profile);
+    if (!tdee) return;
+    const targetCals = goalAdjustedCalories(tdee, profile.goal);
+    const macros = calsToMacros(targetCals, profile.goal);
+    set("macros", macros);
+  }
+
+  // ── Derived display values ────────────────────────────────────────
+  const tdee      = calcTDEE(profile);
+  const goalCals  = tdee ? goalAdjustedCalories(tdee, profile.goal) : null;
+  const goalCalDelta = tdee && goalCals ? goalCals - tdee : 0;
+
+  const derivedCals    = derivedCalories(profile.macros);
+  const proCals        = profile.macros.protein * 4;
+  const carbCals       = profile.macros.carbs   * 4;
+  const fatCals        = profile.macros.fat     * 9;
+  const totalMacroCals = proCals + carbCals + fatCals || 1;
 
   return (
     <main className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
@@ -205,8 +296,140 @@ export default function KitchenPage() {
       </div>
 
       <div className="space-y-6">
+
+        {/* ── About You ── */}
+        <Section title="About You" subtitle="Used to calculate your personalised calorie needs via the Mifflin-St Jeor formula.">
+          <div className="space-y-5">
+
+            {/* Units toggle */}
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">Units</label>
+              <div className="flex rounded-lg border border-border bg-muted/20 p-0.5 gap-0.5">
+                {(["metric", "imperial"] as const).map((u) => (
+                  <button
+                    key={u}
+                    onClick={() => set("units", u)}
+                    className={cn(
+                      "px-4 py-1.5 rounded-md text-xs font-medium transition-all",
+                      profile.units === u
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {u === "metric" ? "Metric" : "Imperial"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sex */}
+            <div>
+              <label className="text-sm font-medium text-foreground block mb-1">Biological sex</label>
+              <p className="text-xs text-muted-foreground mb-3">Used for BMR calculation only</p>
+              <div className="flex gap-3">
+                {(["male", "female"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => set("sex", s)}
+                    className={cn(
+                      "flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all",
+                      profile.sex === s
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    )}
+                  >
+                    {s === "male" ? "♂ Male" : "♀ Female"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Age */}
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="text-sm font-medium text-foreground">Age</label>
+                <span className="text-sm font-bold text-primary">{profile.age} yrs</span>
+              </div>
+              <input
+                type="range" min={15} max={80} step={1}
+                value={profile.age}
+                onChange={(e) => set("age", Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                <span>15</span><span>80</span>
+              </div>
+            </div>
+
+            {/* Height */}
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="text-sm font-medium text-foreground">Height</label>
+                <span className="text-sm font-bold text-primary">{fmtHeight(profile.heightCm, profile.units)}</span>
+              </div>
+              <input
+                type="range" min={140} max={220} step={1}
+                value={profile.heightCm}
+                onChange={(e) => set("heightCm", Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                <span>{fmtHeight(140, profile.units)}</span>
+                <span>{fmtHeight(220, profile.units)}</span>
+              </div>
+            </div>
+
+            {/* Weight */}
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="text-sm font-medium text-foreground">Weight</label>
+                <span className="text-sm font-bold text-primary">{fmtWeight(profile.weightKg, profile.units)}</span>
+              </div>
+              <input
+                type="range" min={40} max={200} step={1}
+                value={profile.weightKg}
+                onChange={(e) => set("weightKg", Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
+                <span>{fmtWeight(40, profile.units)}</span>
+                <span>{fmtWeight(200, profile.units)}</span>
+              </div>
+            </div>
+
+            {/* Activity level */}
+            <div>
+              <label className="text-sm font-medium text-foreground block mb-3">Activity level</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {ACTIVITY_OPTIONS.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => set("activityLevel", a.id)}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-xl border text-left transition-all",
+                      profile.activityLevel === a.id
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                        : "border-border bg-background hover:border-primary/40"
+                    )}
+                  >
+                    <span className="text-xl shrink-0">{a.emoji}</span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground">{a.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{a.desc}</p>
+                    </div>
+                    {profile.activityLevel === a.id && (
+                      <span className="ml-auto text-primary text-xs shrink-0">✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </Section>
+
         {/* ── Goal ── */}
-        <Section title="What's your goal?" subtitle="This shapes your calorie targets and macro split.">
+        <Section title="What's your goal?" subtitle="Selects a macro split — auto-calculated from your stats when available.">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {GOAL_OPTIONS.map((g) => (
               <button
@@ -235,6 +458,40 @@ export default function KitchenPage() {
         {/* ── Nutrition targets ── */}
         <Section title="Nutrition Targets" subtitle="Set your daily macro targets in grams — calories are calculated automatically.">
           <div className="space-y-5">
+
+            {/* TDEE panel */}
+            {tdee && goalCals && (
+              <div className="rounded-xl border border-border bg-muted/30 divide-y divide-border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Estimated TDEE</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Based on your stats &amp; activity</p>
+                  </div>
+                  <span className="text-xl font-bold text-foreground">{tdee.toLocaleString()} kcal</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Goal-adjusted target</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {goalCalDelta === 0
+                        ? "Maintenance calories"
+                        : goalCalDelta > 0
+                        ? `+${goalCalDelta} kcal surplus`
+                        : `${goalCalDelta} kcal deficit`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl font-bold text-primary">{goalCals.toLocaleString()} kcal</span>
+                    <button
+                      onClick={applyTDEEToMacros}
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Derived calorie display */}
             <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
@@ -310,9 +567,9 @@ export default function KitchenPage() {
 
               {/* Visual calorie-share bar */}
               <div className="flex rounded-full overflow-hidden h-3 mt-4">
-                <div className="bg-primary transition-all" style={{ width: `${(proCals / totalMacroCals) * 100}%` }} />
-                <div className="bg-accent transition-all" style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
-                <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(fatCals / totalMacroCals) * 100}%` }} />
+                <div className="bg-primary transition-all"          style={{ width: `${(proCals  / totalMacroCals) * 100}%` }} />
+                <div className="bg-accent transition-all"           style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
+                <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(fatCals  / totalMacroCals) * 100}%` }} />
               </div>
               <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
@@ -341,16 +598,12 @@ export default function KitchenPage() {
                 <button
                   onClick={() => set("servings", Math.max(1, profile.servings - 1))}
                   className="h-9 w-9 rounded-full border border-border text-foreground hover:border-primary hover:text-primary text-lg transition-colors"
-                >
-                  −
-                </button>
+                >−</button>
                 <span className="text-2xl font-bold text-foreground w-8 text-center">{profile.servings}</span>
                 <button
                   onClick={() => set("servings", Math.min(8, profile.servings + 1))}
                   className="h-9 w-9 rounded-full border border-border text-foreground hover:border-primary hover:text-primary text-lg transition-colors"
-                >
-                  +
-                </button>
+                >+</button>
                 <span className="text-sm text-muted-foreground">people</span>
               </div>
             </div>
@@ -380,9 +633,7 @@ export default function KitchenPage() {
                       {(["same", "vary"] as const).map((mode) => (
                         <button
                           key={mode}
-                          onClick={() =>
-                            set("mealConsistency", { ...profile.mealConsistency, [meal]: mode })
-                          }
+                          onClick={() => set("mealConsistency", { ...profile.mealConsistency, [meal]: mode })}
                           className={cn(
                             "px-3 py-1 rounded-md text-xs font-medium transition-all",
                             profile.mealConsistency[meal] === mode
@@ -517,6 +768,7 @@ export default function KitchenPage() {
             </button>
           </div>
         </div>
+
       </div>
     </main>
   );
