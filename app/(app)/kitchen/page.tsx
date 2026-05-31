@@ -284,14 +284,26 @@ export default function KitchenPage() {
     <main className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-4xl">🍽️</span>
-          <div>
-            <h1 className="font-serif text-3xl font-bold text-foreground">My Kitchen</h1>
-            <p className="text-muted-foreground text-sm">
-              Set your goals and preferences — AI uses these to build every meal plan.
-            </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-4xl">🍽️</span>
+            <div>
+              <h1 className="font-serif text-3xl font-bold text-foreground">My Kitchen</h1>
+              <p className="text-muted-foreground text-sm">
+                Set your goals and preferences — AI uses these to build every meal plan.
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => { saveKitchenProfile(profile); setSaved(true); }}
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "shrink-0 transition-colors",
+              saved ? "bg-green-600 hover:bg-green-600/90" : "bg-primary hover:bg-primary/90"
+            )}
+          >
+            {saved ? "✓ Saved" : "Save"}
+          </button>
         </div>
       </div>
 

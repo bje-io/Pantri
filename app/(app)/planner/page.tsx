@@ -13,7 +13,7 @@ import {
 } from "@/lib/meal-data";
 import {
   loadWeekPlan, saveWeekPlan, loadCustomRecipes,
-  loadKitchenGoals, derivedCalories, type KitchenGoals,
+  loadKitchenGoals, loadKitchenProfile, derivedCalories, type KitchenGoals,
 } from "@/lib/local-store";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -23,6 +23,16 @@ function getWeekStartISO(offset = 0): string {
   const sunday = new Date(d);
   sunday.setDate(d.getDate() - d.getDay() + offset * 7);
   return sunday.toISOString().split("T")[0];
+}
+
+// Always expose exactly 4 weeks: current + 3 upcoming
+const WEEK_OFFSETS = [0, 1, 2, 3] as const;
+type WeekOffset = (typeof WEEK_OFFSETS)[number];
+
+function weekTabLabel(offset: WeekOffset): string {
+  if (offset === 0) return "This week";
+  if (offset === 1) return "Next week";
+  return `+${offset} weeks`;
 }
 
 function formatWeekRange(iso: string): string {
@@ -562,7 +572,7 @@ function MealSlotCard({
 // ── Main page ─────────────────────────────────────────────────────
 
 export default function PlannerPage() {
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekOffset, setWeekOffset] = useState<WeekOffset>(0);
   const weekStart = getWeekStartISO(weekOffset);
 
   // Always start with default; load from localStorage after hydration
@@ -587,10 +597,14 @@ export default function PlannerPage() {
   }
 
   const [kitchenGoals, setKitchenGoals] = useState<KitchenGoals>(() => loadKitchenGoals());
+  // Full kitchen profile — used for dietary/allergy filtering on the dice
+  const [kitchenProfile, setKitchenProfile] = useState<Record<string, unknown>>({});
 
-  // Refresh goals whenever planner is focused (in case kitchen was updated)
+  // Refresh goals + profile whenever planner is focused (in case kitchen was updated)
   useEffect(() => {
     setKitchenGoals(loadKitchenGoals());
+    const p = loadKitchenProfile();
+    if (p) setKitchenProfile(p);
   }, []);
 
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
@@ -604,7 +618,6 @@ export default function PlannerPage() {
   });
 
   const weekLabel = formatWeekRange(weekStart);
-  const isCurrentWeek = weekOffset === 0;
 
   function openPicker(dayIndex: number, mealType: MealType) {
     setPickerTarget({ dayIndex, mealType });
@@ -652,12 +665,72 @@ export default function PlannerPage() {
     return [...custom.filter((r) => !seedIds.has(r.id)), ...ALL_RECIPES];
   }
 
+  function applyKitchenFilters(pool: Recipe[]): Recipe[] {
+    const dietaryPrefs = (kitchenProfile.dietaryPrefs as string[] | undefined) ?? [];
+    const allergies    = (kitchenProfile.allergies    as string[] | undefined) ?? [];
+
+    // Map dietary preference IDs → recipe tag keywords
+    const DIET_TAG_MAP: Record<string, string[]> = {
+      vegetarian:   ["vegetarian"],
+      vegan:        ["vegan"],
+      "gluten-free":["gluten-free"],
+      "dairy-free": ["dairy-free"],
+      "low-carb":   ["low-carb"],
+      keto:         ["keto"],
+      paleo:        ["paleo"],
+      halal:        ["halal"],
+    };
+
+    // Allergy → ingredient keywords to block
+    const ALLERGY_KEYWORDS: Record<string, string[]> = {
+      nuts:     ["almonds", "cashews", "walnuts", "pecans", "pine nuts", "tree nut"],
+      peanuts:  ["peanut"],
+      shellfish:["shrimp", "crab", "lobster", "scallop", "clam", "oyster", "prawn"],
+      fish:     ["salmon", "tuna", "cod", "tilapia", "halibut", "fish"],
+      eggs:     ["egg"],
+      soy:      ["soy sauce", "tofu", "edamame", "miso", "tempeh", "soy"],
+      sesame:   ["sesame", "tahini"],
+    };
+
+    let filtered = pool;
+
+    // Dietary preference filter: keep recipes that include at least one matching tag
+    // (only applied when the recipe pool actually has tagged items — soft filter)
+    if (dietaryPrefs.length > 0) {
+      const requiredTags = dietaryPrefs.flatMap((p) => DIET_TAG_MAP[p] ?? []);
+      if (requiredTags.length > 0) {
+        const dietFiltered = filtered.filter((r) =>
+          requiredTags.some((tag) => r.tags.map((t) => t.toLowerCase()).includes(tag))
+        );
+        // Only apply if it doesn't wipe out the pool entirely
+        if (dietFiltered.length > 0) filtered = dietFiltered;
+      }
+    }
+
+    // Allergy filter: hard block — exclude recipes with blocked ingredient keywords
+    if (allergies.length > 0) {
+      const blockedKeywords = allergies.flatMap((a) => ALLERGY_KEYWORDS[a] ?? []);
+      if (blockedKeywords.length > 0) {
+        const allergyFiltered = filtered.filter((r) => {
+          const ingredientText = r.ingredients.map((i) => i.item.toLowerCase()).join(" ");
+          return !blockedKeywords.some((kw) => ingredientText.includes(kw));
+        });
+        if (allergyFiltered.length > 0) filtered = allergyFiltered;
+      }
+    }
+
+    return filtered;
+  }
+
   function assignRandomRecipe(dayIndex: number, mealType: MealType) {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
     const combined = buildCombinedPool();
 
-    const typePool = combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType));
+    // Start with meal-type filtered pool, then apply kitchen profile filters
+    const typePool = applyKitchenFilters(
+      combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType))
+    );
 
     // Goal-aware: prefer recipes within ±10% of per-meal calorie target
     const perMealTarget = derivedCalories(kitchenGoals.macros) / 3;
@@ -799,34 +872,30 @@ export default function PlannerPage() {
           </div>
         </div>
 
-        {/* Week navigation */}
-        <div className="flex items-center gap-3 mb-5">
-          <button
-            onClick={() => setWeekOffset((o) => o - 1)}
-            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-muted"
-          >
-            ← Prev
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{weekLabel}</span>
-            {isCurrentWeek && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">This week</span>
-            )}
-            {weekOffset === 1 && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Next week</span>
-            )}
-          </div>
-          <button
-            onClick={() => setWeekOffset((o) => o + 1)}
-            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-muted"
-          >
-            Next →
-          </button>
-          {weekOffset !== 0 && (
-            <button onClick={() => setWeekOffset(0)} className="text-xs text-primary hover:underline">
-              Today
-            </button>
-          )}
+        {/* Week tabs — current week + 3 upcoming, always 4 visible */}
+        <div className="flex gap-1 mb-5 border border-border rounded-xl p-1 bg-muted/20 overflow-x-auto">
+          {WEEK_OFFSETS.map((offset) => {
+            const ws = getWeekStartISO(offset);
+            const range = formatWeekRange(ws);
+            const isActive = weekOffset === offset;
+            return (
+              <button
+                key={offset}
+                onClick={() => setWeekOffset(offset)}
+                className={cn(
+                  "flex-1 min-w-[130px] py-2.5 px-3 rounded-lg text-center transition-all",
+                  isActive
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <div className={cn("text-xs font-semibold", isActive ? "text-primary" : "")}>
+                  {weekTabLabel(offset)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{range}</div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Same-for-all toggles */}
