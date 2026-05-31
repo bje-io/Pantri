@@ -8,7 +8,11 @@ export default function SignUpPage() {
           <h1 className="font-serif text-3xl font-bold text-foreground mb-2">Create your account</h1>
           <p className="text-muted-foreground text-sm">Start planning smarter meals with Pantri</p>
         </div>
-        <SignUp forceRedirectUrl="/planner" />
+        <SignUp
+          forceRedirectUrl="/planner"
+          fallbackRedirectUrl="/planner"
+          signInForceRedirectUrl="/planner"
+        />
       </div>
     </main>
   );

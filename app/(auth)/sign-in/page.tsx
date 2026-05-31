@@ -8,7 +8,11 @@ export default function SignInPage() {
           <h1 className="font-serif text-3xl font-bold text-foreground mb-2">Welcome back</h1>
           <p className="text-muted-foreground text-sm">Sign in to your Pantri account</p>
         </div>
-        <SignIn forceRedirectUrl="/planner" />
+        <SignIn
+          forceRedirectUrl="/planner"
+          fallbackRedirectUrl="/planner"
+          signUpForceRedirectUrl="/planner"
+        />
       </div>
     </main>
   );
