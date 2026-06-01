@@ -993,9 +993,11 @@ export default function PlannerPage() {
                   <div key={day.day} className="text-center">
                     <div className={cn(
                       "rounded-xl p-2 border transition-all",
-                      isToday ? "bg-primary/10 border-primary/30" : "bg-muted/30 border-transparent"
+                      isToday
+                        ? "bg-primary/10 border-primary/30"
+                        : "border-transparent"
                     )}>
-                      <p className={cn("text-xs font-bold", isToday ? "text-primary" : "text-foreground")}>
+                      <p className={cn("text-xs font-bold", isToday ? "text-primary" : "text-muted-foreground")}>
                         {day.day.slice(0, 3).toUpperCase()}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
@@ -1021,8 +1023,9 @@ export default function PlannerPage() {
                   const effectiveRecipe = sameForAll[type]
                     ? plan.days[0].meals[type].recipe
                     : day.meals[type].recipe;
+                  const isTodayCol = weekOffset === 0 && new Date().getDay() === di;
                   return (
-                    <div key={day.day} className="min-h-[130px]">
+                    <div key={day.day} className={cn("min-h-[130px] rounded-xl", isTodayCol && "bg-primary/[0.04]")}>
                       <MealSlotCard
                         recipe={effectiveRecipe}
                         onOpen={() => openPicker(sameForAll[type] ? 0 : di, type)}

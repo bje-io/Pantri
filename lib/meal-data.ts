@@ -1299,19 +1299,45 @@ export function getRecipeById(id: string): Recipe | undefined {
   return ALL_RECIPES.find((r) => r.id === id);
 }
 
-// Build a default week plan (Sun–Sat) — cycles through all recipes for variety
 export const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Deterministic Fisher-Yates shuffle — same seed always produces the same order,
+// different seeds produce completely different orderings.
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const result = [...arr];
+  // LCG: fast, reproducible, good distribution for small arrays
+  let s = ((seed * 1664525 + 1013904223) >>> 0);
+  for (let i = result.length - 1; i > 0; i--) {
+    s = ((s * 1664525 + 1013904223) >>> 0);
+    const j = s % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Build a default week plan (Sun–Sat).
+// Each weekStart ISO date produces a unique, deterministic shuffle of all recipes
+// so every week looks completely different from the last.
 export function buildDefaultWeekPlan(weekStart: string): WeekPlan {
+  // Derive a stable integer seed from the week — noon UTC avoids DST edge cases
+  const weekNum = Math.floor(
+    new Date(weekStart + "T12:00:00Z").getTime() / (7 * 24 * 60 * 60 * 1000)
+  );
+
+  // Each meal type gets a different seed offset so their shuffles are independent
+  const breakfasts = seededShuffle(BREAKFAST_RECIPES, weekNum);
+  const lunches    = seededShuffle(LUNCH_RECIPES,    weekNum + 31);
+  const dinners    = seededShuffle(DINNER_RECIPES,   weekNum + 67);
+
   return {
     weekStart,
     days: WEEK_DAYS.map((day, i) => ({
       day,
       isCheatDay: false,
       meals: {
-        breakfast: { recipe: BREAKFAST_RECIPES[i % BREAKFAST_RECIPES.length] },
-        lunch:     { recipe: LUNCH_RECIPES[i    % LUNCH_RECIPES.length]    },
-        dinner:    { recipe: DINNER_RECIPES[i   % DINNER_RECIPES.length]   },
+        breakfast: { recipe: breakfasts[i % breakfasts.length] },
+        lunch:     { recipe: lunches[i   % lunches.length]    },
+        dinner:    { recipe: dinners[i   % dinners.length]    },
       },
     })),
   };
