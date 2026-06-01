@@ -223,12 +223,14 @@ function RecipePreviewModal({
 function RecipePickerModal({
   mealType,
   currentRecipe,
+  allWeek,
   onSelect,
   onRemove,
   onClose,
 }: {
   mealType: MealType;
   currentRecipe: Recipe | null;
+  allWeek: boolean;
   onSelect: (recipe: Recipe) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -270,6 +272,9 @@ function RecipePickerModal({
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {filtered.length} recipe{filtered.length !== 1 ? "s" : ""} available
+              {allWeek && (
+                <span className="ml-1.5 text-primary font-medium">· applies to all 7 days</span>
+              )}
             </p>
           </div>
           <button
@@ -781,7 +786,13 @@ export default function PlannerPage() {
   }
 
   function toggleSameForAll(mealType: MealType) {
+    const turningOn = !sameForAll[mealType];
     setSameForAll((prev) => ({ ...prev, [mealType]: !prev[mealType] }));
+    // When enabling, immediately open the picker so the user can choose
+    // which recipe to use for all 7 days in one step.
+    if (turningOn) {
+      setPickerTarget({ dayIndex: 0, mealType });
+    }
   }
 
   /** Fill every slot in the current week with goal-aware, kitchen-filtered recipes. */
@@ -1159,6 +1170,7 @@ export default function PlannerPage() {
         <RecipePickerModal
           mealType={pickerTarget.mealType}
           currentRecipe={pickerCurrentRecipe}
+          allWeek={sameForAll[pickerTarget.mealType]}
           onSelect={assignRecipe}
           onRemove={removeRecipe}
           onClose={closePicker}
