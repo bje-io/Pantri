@@ -1,15 +1,26 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-// Routes that require the user to be signed in
 const isProtectedRoute = createRouteMatcher([
   "/planner(.*)",
   "/recipes(.*)",
   "/forum(.*)",
   "/grocery(.*)",
   "/profile(.*)",
+  "/kitchen(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth();
+
+  // Signed-in user hitting the marketing home page → redirect to planner
+  if (userId && req.nextUrl.pathname === "/") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/planner";
+    return NextResponse.redirect(url);
+  }
+
+  // Protect app routes — unauthenticated users get redirected to sign-in
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
@@ -17,8 +28,6 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and static files
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };
