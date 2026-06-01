@@ -402,7 +402,7 @@ function macroStatus(actual: number, target: number): "empty" | "low" | "ok" | "
 
 const STATUS_COLOR: Record<string, string> = {
   empty: "text-muted-foreground",
-  low:   "text-blue-500",
+  low:   "text-destructive",
   ok:    "text-green-600",
   warn:  "text-yellow-500",
   over:  "text-destructive",
@@ -444,8 +444,8 @@ function DayTotalsCell({
             <div className="flex-1 bg-muted rounded-full h-1 overflow-hidden">
               <div
                 className={cn("h-full rounded-full transition-all",
-                  st === "over" || st === "warn" ? "bg-destructive/70" :
-                  st === "ok" ? "bg-green-500" : "bg-blue-400/60"
+                  st === "ok" ? "bg-green-500" :
+                  st === "empty" ? "bg-muted" : "bg-destructive/70"
                 )}
                 style={{ width: `${barPct}%` }}
               />
@@ -844,6 +844,54 @@ export default function PlannerPage() {
     }));
   }
 
+  /**
+   * Rebalance: re-assign every meal slot using the recipe from the pool
+   * whose macros are closest to the per-meal targets derived from the
+   * user's daily goals. Calories are weighted 2×, protein 1×, carbs/fat 0.5×.
+   * Days cycle through the ranked pool so all 7 days still get variety.
+   */
+  function rebalanceMeals() {
+    const combined = buildCombinedPool();
+    const dailyCal = derivedCalories(kitchenGoals.macros);
+
+    const perMeal = {
+      cal:  dailyCal                     / 3,
+      pro:  kitchenGoals.macros.protein  / 3,
+      carb: kitchenGoals.macros.carbs    / 3,
+      fat:  kitchenGoals.macros.fat      / 3,
+    };
+
+    function score(r: Recipe): number {
+      const d = (a: number, t: number) => t > 0 ? Math.abs(a - t) / t : 0;
+      return d(r.macros.calories, perMeal.cal)  * 2
+           + d(r.macros.protein,  perMeal.pro)
+           + d(r.macros.carbs,    perMeal.carb) * 0.5
+           + d(r.macros.fat,      perMeal.fat)  * 0.5;
+    }
+
+    const pools = {} as Record<MealType, Recipe[]>;
+    for (const { type } of MEAL_LABELS) {
+      const base = applyKitchenFilters(
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+      );
+      pools[type] = [...base].sort((a, b) => score(a) - score(b));
+    }
+
+    updatePlan((prev) => ({
+      ...prev,
+      days: prev.days.map((day, di) => {
+        const newMeals = { ...day.meals };
+        for (const { type } of MEAL_LABELS) {
+          if (sameForAll[type] && di > 0) continue;
+          const pool = pools[type];
+          if (pool.length === 0) continue;
+          newMeals[type] = { recipe: pool[di % pool.length] };
+        }
+        return { ...day, meals: newMeals };
+      }),
+    }));
+  }
+
   const pickerDay = pickerTarget ? plan.days[pickerTarget.dayIndex] : null;
   const pickerCurrentRecipe =
     pickerTarget && pickerDay ? pickerDay.meals[pickerTarget.mealType].recipe : null;
@@ -1090,7 +1138,25 @@ export default function PlannerPage() {
         {/* Week macro totals vs goals */}
         {weekTotals.cal > 0 && (
           <div className="mt-3 rounded-2xl border border-border bg-card p-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Weekly totals vs goals</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Weekly totals vs goals</p>
+              {(
+                macroStatus(weekTotals.cal,   weekGoals.cal)   !== "ok" ||
+                macroStatus(weekTotals.pro,   weekGoals.pro)   !== "ok" ||
+                macroStatus(weekTotals.carbs, weekGoals.carbs) !== "ok" ||
+                macroStatus(weekTotals.fat,   weekGoals.fat)   !== "ok"
+              ) && macroStatus(weekTotals.cal, weekGoals.cal) !== "empty" && (
+                <button
+                  onClick={rebalanceMeals}
+                  className={cn(
+                    buttonVariants({ size: "sm", variant: "outline" }),
+                    "text-xs gap-1.5 border-primary/40 text-primary hover:bg-primary/5"
+                  )}
+                >
+                  🎯 Rebalance meals
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { label: "Calories", val: weekTotals.cal,   goal: weekGoals.cal,   unit: "" },
@@ -1112,8 +1178,8 @@ export default function PlannerPage() {
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
                         className={cn("h-full rounded-full transition-all",
-                          st === "over" || st === "warn" ? "bg-destructive/70" :
-                          st === "ok" ? "bg-green-500" : "bg-blue-400/60"
+                          st === "ok" ? "bg-green-500" :
+                          st === "empty" ? "bg-muted" : "bg-destructive/70"
                         )}
                         style={{ width: `${barPct}%` }}
                       />
@@ -1121,6 +1187,11 @@ export default function PlannerPage() {
                     {st === "over" && (
                       <p className="text-[10px] text-destructive mt-0.5">
                         +{(val - goal).toLocaleString()}{unit} over goal
+                      </p>
+                    )}
+                    {st === "low" && (
+                      <p className="text-[10px] text-destructive mt-0.5">
+                        {(goal - val).toLocaleString()}{unit} under goal
                       </p>
                     )}
                   </div>
