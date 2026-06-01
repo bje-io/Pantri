@@ -109,13 +109,15 @@ const GOAL_MACRO_RATIOS: Record<string, { p: number; c: number; f: number }> = {
   custom:         { p: 0.30, c: 0.40, f: 0.30 },
 };
 
-// Static gram fallbacks (used when no body stats are entered)
+// Static gram fallbacks (used when no body stats are entered).
+// Targets aligned with seed recipe calorie levels so green zone is achievable:
+//   lose-weight 1,500 cal · maintain 1,800 cal · build-muscle 2,200 cal · eat-healthy 1,600 cal
 const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
-  "lose-weight":  { macros: { protein: 130, carbs: 150, fat: 53 } },
-  maintain:       { macros: { protein: 150, carbs: 200, fat: 67 } },
-  "build-muscle": { macros: { protein: 190, carbs: 250, fat: 83 } },
-  "eat-healthy":  { macros: { protein: 140, carbs: 190, fat: 65 } },
-  custom: {},
+  "lose-weight":  { macros: { protein: 150, carbs: 130, fat: 42  } },  // 1,494 kcal
+  maintain:       { macros: { protein: 135, carbs: 180, fat: 60  } },  // 1,800 kcal
+  "build-muscle": { macros: { protein: 193, carbs: 248, fat: 49  } },  // 2,201 kcal
+  "eat-healthy":  { macros: { protein: 100, carbs: 200, fat: 44  } },  // 1,596 kcal
+  custom:         {},
 };
 
 // ── TDEE helpers ──────────────────────────────────────────────────
@@ -205,8 +207,8 @@ const DEFAULT_PROFILE: KitchenProfile = {
   sex: "male",
   activityLevel: "moderate",
   units: "metric",
-  // Nutrition — matches eat-healthy TDEE-based preset at defaults (≈ 1,949 cal)
-  macros: { protein: 150, carbs: 200, fat: 61 },
+  // Nutrition — eat-healthy preset: 1,596 kcal · ~532 kcal per meal
+  macros: { protein: 100, carbs: 200, fat: 44 },
   // Meal prefs
   servings: 2,
   dietaryPrefs: [],
@@ -267,6 +269,25 @@ export default function KitchenPage() {
     const targetCals = goalAdjustedCalories(tdee, profile.goal);
     const macros = calsToMacros(targetCals, profile.goal);
     set("macros", macros);
+  }
+
+  /** Scale all macros proportionally so total calories hit `newCals`. */
+  function scaleToCalories(newCals: number) {
+    const current = derivedCals || 1;
+    const ratio = newCals / current;
+    set("macros", {
+      protein: Math.max(10, Math.round(profile.macros.protein * ratio)),
+      carbs:   Math.max(10, Math.round(profile.macros.carbs   * ratio)),
+      fat:     Math.max(5,  Math.round(profile.macros.fat     * ratio)),
+    });
+  }
+
+  /** Estimate lbs/week change from a calorie delta vs TDEE. */
+  function weightChangeLabel(delta: number): string {
+    const lbsPerWeek = Math.abs(delta * 7) / 3500;
+    const dir = delta < 0 ? "loss" : "gain";
+    if (lbsPerWeek < 0.1) return "maintenance";
+    return `~${lbsPerWeek.toFixed(1)} lbs/week ${dir}`;
   }
 
   // ── Derived display values ────────────────────────────────────────
@@ -468,134 +489,211 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Nutrition targets ── */}
-        <Section title="Nutrition Targets" subtitle="Set your daily macro targets in grams — calories are calculated automatically.">
+        <Section title="Nutrition Targets" subtitle="Set your daily calorie target — macros adjust automatically, or fine-tune below.">
           <div className="space-y-5">
 
-            {/* TDEE panel */}
-            {tdee && goalCals && (
-              <div className="rounded-xl border border-border bg-muted/30 divide-y divide-border overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Estimated TDEE</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Based on your stats &amp; activity</p>
-                  </div>
-                  <span className="text-xl font-bold text-foreground">{tdee.toLocaleString()} kcal</span>
+            {/* ── 1. Calorie target — primary control ── */}
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Daily calorie target</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Drag to set · macros scale proportionally
+                  </p>
                 </div>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Goal-adjusted target</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {goalCalDelta === 0
-                        ? "Maintenance calories"
-                        : goalCalDelta > 0
-                        ? `+${goalCalDelta} kcal surplus`
-                        : `${goalCalDelta} kcal deficit`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl font-bold text-primary">{goalCals.toLocaleString()} kcal</span>
+                <span className="text-3xl font-bold text-primary tabular-nums">
+                  {derivedCals.toLocaleString()}
+                  <span className="text-sm font-normal text-muted-foreground ml-1">kcal</span>
+                </span>
+              </div>
+
+              <input
+                type="range" min={1200} max={3500} step={50}
+                value={derivedCals}
+                onChange={(e) => scaleToCalories(Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>1,200<br/><span className="text-[9px]">Min safe</span></span>
+                <span className="text-center">1,500<br/><span className="text-[9px]">Weight loss</span></span>
+                <span className="text-center">2,000<br/><span className="text-[9px]">Maintain</span></span>
+                <span className="text-center">2,500<br/><span className="text-[9px]">Active</span></span>
+                <span className="text-right">3,500<br/><span className="text-[9px]">Build</span></span>
+              </div>
+
+              {/* Safety warning */}
+              {derivedCals < 1200 && (
+                <p className="text-xs text-destructive font-medium">
+                  ⚠️ Below 1,200 kcal is not recommended without medical supervision.
+                </p>
+              )}
+
+              {/* TDEE comparison */}
+              {tdee && (
+                <div className="flex items-center justify-between rounded-lg bg-background/60 border border-primary/10 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">
+                    Your TDEE: <span className="font-semibold text-foreground">{tdee.toLocaleString()} kcal</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "font-semibold",
+                      derivedCals < tdee ? "text-primary" : "text-accent"
+                    )}>
+                      {derivedCals < tdee
+                        ? `−${(tdee - derivedCals).toLocaleString()} kcal`
+                        : `+${(derivedCals - tdee).toLocaleString()} kcal`}
+                    </span>
+                    <span className="text-muted-foreground">
+                      · {weightChangeLabel(derivedCals - tdee)}
+                    </span>
                     <button
                       onClick={applyTDEEToMacros}
-                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-6 text-[10px] px-2")}
                     >
-                      Apply
+                      Use TDEE
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Derived calorie display */}
-            <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">Daily calories (derived)</p>
-                <p className="text-xs text-muted-foreground mt-0.5">protein × 4 + carbs × 4 + fat × 9</p>
-              </div>
-              <span className="text-2xl font-bold text-primary">{derivedCals.toLocaleString()} kcal</span>
+              )}
             </div>
 
-            {/* Gram sliders */}
+            {/* ── 2. Per-meal targets ── */}
             <div>
-              <p className="text-sm font-medium text-foreground mb-3">Macros (grams per day)</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Per meal target (÷ 3)
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { emoji: "🌅", label: "Breakfast" },
+                  { emoji: "☀️", label: "Lunch" },
+                  { emoji: "🌙", label: "Dinner" },
+                ].map(({ emoji, label }) => (
+                  <div key={label} className="rounded-xl border border-border bg-muted/20 p-3 text-center">
+                    <p className="text-lg mb-0.5">{emoji}</p>
+                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="text-xl font-bold text-foreground mt-1">
+                      {Math.round(derivedCals / 3).toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">kcal</p>
+                    <div className="mt-1.5 pt-1.5 border-t border-border/50 grid grid-cols-3 gap-0.5 text-[9px] text-muted-foreground">
+                      <span>{Math.round(profile.macros.protein / 3)}g P</span>
+                      <span>{Math.round(profile.macros.carbs / 3)}g C</span>
+                      <span>{Math.round(profile.macros.fat / 3)}g F</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── 3. Macro breakdown (fine-tune) ── */}
+            <div>
+              <p className="text-sm font-medium text-foreground mb-3">Fine-tune macros</p>
               <div className="space-y-4">
+
                 {/* Protein */}
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-xs text-muted-foreground">Protein</label>
-                    <span className="text-xs font-semibold text-foreground">
-                      {profile.macros.protein} g &nbsp;
+                    <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-primary inline-block" />
+                      Protein
+                    </label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {Math.round((proCals / totalMacroCals) * 100)}% of calories
+                      </span>
+                      <span className="font-semibold text-foreground">{profile.macros.protein} g</span>
                       <span className="text-muted-foreground">({proCals} kcal)</span>
-                    </span>
+                    </div>
                   </div>
                   <input
-                    type="range" min={50} max={350} step={5}
+                    type="range" min={30} max={300} step={5}
                     value={profile.macros.protein}
                     onChange={(e) => set("macros", { ...profile.macros, protein: Number(e.target.value) })}
                     className="w-full accent-primary"
                   />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
-                    <span>50 g</span><span>350 g</span>
-                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Recommended: {Math.round(profile.weightKg * 1.6)}–{Math.round(profile.weightKg * 2.2)} g/day
+                    ({(profile.weightKg * 1.6 / (profile.macros.protein || 1) * 100).toFixed(0)}% of your body weight target)
+                  </p>
                 </div>
+
                 {/* Carbs */}
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-xs text-muted-foreground">Carbs</label>
-                    <span className="text-xs font-semibold text-foreground">
-                      {profile.macros.carbs} g &nbsp;
+                    <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-accent inline-block" />
+                      Carbohydrates
+                    </label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {Math.round((carbCals / totalMacroCals) * 100)}% of calories
+                      </span>
+                      <span className="font-semibold text-foreground">{profile.macros.carbs} g</span>
                       <span className="text-muted-foreground">({carbCals} kcal)</span>
-                    </span>
+                    </div>
                   </div>
                   <input
-                    type="range" min={50} max={500} step={5}
+                    type="range" min={30} max={400} step={5}
                     value={profile.macros.carbs}
                     onChange={(e) => set("macros", { ...profile.macros, carbs: Number(e.target.value) })}
                     className="w-full accent-primary"
                   />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
-                    <span>50 g</span><span>500 g</span>
-                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Dietary guidelines: 45–65% of total calories · min. 130 g/day for brain function
+                  </p>
                 </div>
+
                 {/* Fat */}
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-xs text-muted-foreground">Fat</label>
-                    <span className="text-xs font-semibold text-foreground">
-                      {profile.macros.fat} g &nbsp;
+                    <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-yellow-400 inline-block" />
+                      Fat
+                    </label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {Math.round((fatCals / totalMacroCals) * 100)}% of calories
+                      </span>
+                      <span className="font-semibold text-foreground">{profile.macros.fat} g</span>
                       <span className="text-muted-foreground">({fatCals} kcal)</span>
-                    </span>
+                    </div>
                   </div>
                   <input
-                    type="range" min={15} max={200} step={2}
+                    type="range" min={15} max={180} step={2}
                     value={profile.macros.fat}
                     onChange={(e) => set("macros", { ...profile.macros, fat: Number(e.target.value) })}
                     className="w-full accent-primary"
                   />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
-                    <span>15 g</span><span>200 g</span>
-                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Dietary guidelines: 20–35% of total calories · min. 44 g/day for hormones
+                  </p>
                 </div>
               </div>
 
-              {/* Visual calorie-share bar */}
-              <div className="flex rounded-full overflow-hidden h-3 mt-4">
-                <div className="bg-primary transition-all"          style={{ width: `${(proCals  / totalMacroCals) * 100}%` }} />
-                <div className="bg-accent transition-all"           style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
-                <div className="bg-muted-foreground/40 transition-all" style={{ width: `${(fatCals  / totalMacroCals) * 100}%` }} />
-              </div>
-              <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-primary inline-block" />
-                  Protein ({Math.round((proCals / totalMacroCals) * 100)}%)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-accent inline-block" />
-                  Carbs ({Math.round((carbCals / totalMacroCals) * 100)}%)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 inline-block" />
-                  Fat ({Math.round((fatCals / totalMacroCals) * 100)}%)
-                </span>
+              {/* Calorie-share bar */}
+              <div className="mt-4">
+                <div className="flex rounded-full overflow-hidden h-3">
+                  <div className="bg-primary transition-all"             style={{ width: `${(proCals  / totalMacroCals) * 100}%` }} />
+                  <div className="bg-accent transition-all"              style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
+                  <div className="bg-yellow-400/70 transition-all"       style={{ width: `${(fatCals  / totalMacroCals) * 100}%` }} />
+                </div>
+                <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-primary inline-block" />
+                    Protein {Math.round((proCals / totalMacroCals) * 100)}%
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-accent inline-block" />
+                    Carbs {Math.round((carbCals / totalMacroCals) * 100)}%
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-yellow-400/70 inline-block" />
+                    Fat {Math.round((fatCals / totalMacroCals) * 100)}%
+                  </span>
+                </div>
+                {Math.round((proCals / totalMacroCals) * 100)
+                  + Math.round((carbCals / totalMacroCals) * 100)
+                  + Math.round((fatCals / totalMacroCals) * 100) !== 100 && null}
               </div>
             </div>
           </div>
