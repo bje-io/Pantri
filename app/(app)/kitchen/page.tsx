@@ -100,23 +100,27 @@ const GOAL_OPTIONS = [
   { id: "custom",       label: "Custom",         emoji: "⚙️", desc: "Set your own targets manually"                 },
 ] as const;
 
-// Macro calorie-ratio targets per goal (for TDEE-based auto-fill)
+// Macro calorie-ratio targets per goal (for TDEE-based auto-fill).
+// Evidence-based: protein 0.8–1.6 g/kg covers sedentary to active adults.
+// Translating to % of calories: ~20–26% protein is realistic for most goals.
+// High-protein "lose-weight" research supports ~25% protein for muscle preservation.
 const GOAL_MACRO_RATIOS: Record<string, { p: number; c: number; f: number }> = {
-  "lose-weight":  { p: 0.40, c: 0.35, f: 0.25 },
-  maintain:       { p: 0.30, c: 0.40, f: 0.30 },
-  "build-muscle": { p: 0.35, c: 0.45, f: 0.20 },
-  "eat-healthy":  { p: 0.25, c: 0.50, f: 0.25 },
-  custom:         { p: 0.30, c: 0.40, f: 0.30 },
+  "lose-weight":  { p: 0.25, c: 0.45, f: 0.30 },
+  maintain:       { p: 0.20, c: 0.50, f: 0.30 },
+  "build-muscle": { p: 0.24, c: 0.46, f: 0.30 },
+  "eat-healthy":  { p: 0.20, c: 0.50, f: 0.30 },
+  custom:         { p: 0.22, c: 0.48, f: 0.30 },
 };
 
 // Static gram fallbacks (used when no body stats are entered).
-// Targets aligned with seed recipe calorie levels so green zone is achievable:
-//   lose-weight 1,500 cal · maintain 1,800 cal · build-muscle 2,200 cal · eat-healthy 1,600 cal
+// Aligned with what seed recipes actually deliver so the green zone is reachable:
+//   recipes avg ~390 kcal breakfast · ~460 kcal lunch · ~470 kcal dinner = ~1,320/day
+//   targets set ~10–20% above to account for snacks and variation.
 const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
-  "lose-weight":  { macros: { protein: 150, carbs: 130, fat: 42  } },  // 1,494 kcal
-  maintain:       { macros: { protein: 135, carbs: 180, fat: 60  } },  // 1,800 kcal
-  "build-muscle": { macros: { protein: 193, carbs: 248, fat: 49  } },  // 2,201 kcal
-  "eat-healthy":  { macros: { protein: 100, carbs: 200, fat: 44  } },  // 1,596 kcal
+  "lose-weight":  { macros: { protein: 85,  carbs: 150, fat: 42  } },  // 1,318 kcal
+  maintain:       { macros: { protein: 90,  carbs: 210, fat: 52  } },  // 1,668 kcal
+  "build-muscle": { macros: { protein: 120, carbs: 240, fat: 57  } },  // 1,953 kcal
+  "eat-healthy":  { macros: { protein: 90,  carbs: 175, fat: 45  } },  // 1,465 kcal
   custom:         {},
 };
 
@@ -207,8 +211,8 @@ const DEFAULT_PROFILE: KitchenProfile = {
   sex: "male",
   activityLevel: "moderate",
   units: "metric",
-  // Nutrition — eat-healthy preset: 1,596 kcal · ~532 kcal per meal
-  macros: { protein: 100, carbs: 200, fat: 44 },
+  // Nutrition — eat-healthy preset: 1,465 kcal · ~488 kcal avg per meal
+  macros: { protein: 90, carbs: 175, fat: 45 },
   // Meal prefs
   servings: 2,
   dietaryPrefs: [],
@@ -515,10 +519,10 @@ export default function KitchenPage() {
               />
               <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>1,200<br/><span className="text-[9px]">Min safe</span></span>
-                <span className="text-center">1,500<br/><span className="text-[9px]">Weight loss</span></span>
-                <span className="text-center">2,000<br/><span className="text-[9px]">Maintain</span></span>
-                <span className="text-center">2,500<br/><span className="text-[9px]">Active</span></span>
-                <span className="text-right">3,500<br/><span className="text-[9px]">Build</span></span>
+                <span className="text-center">1,400<br/><span className="text-[9px]">Deficit</span></span>
+                <span className="text-center">1,800<br/><span className="text-[9px]">Maintain</span></span>
+                <span className="text-center">2,300<br/><span className="text-[9px]">Active</span></span>
+                <span className="text-right">3,000<br/><span className="text-[9px]">Athlete</span></span>
               </div>
 
               {/* Safety warning */}
@@ -559,26 +563,31 @@ export default function KitchenPage() {
 
             {/* ── 2. Per-meal targets ── */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Per meal target (÷ 3)
-              </p>
+              <div className="flex items-baseline justify-between mb-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Per-meal targets
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  25 / 35 / 40% split — breakfast naturally runs lighter
+                </p>
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { emoji: "🌅", label: "Breakfast" },
-                  { emoji: "☀️", label: "Lunch" },
-                  { emoji: "🌙", label: "Dinner" },
-                ].map(({ emoji, label }) => (
+                  { emoji: "🌅", label: "Breakfast", share: 0.25 },
+                  { emoji: "☀️", label: "Lunch",     share: 0.35 },
+                  { emoji: "🌙", label: "Dinner",    share: 0.40 },
+                ].map(({ emoji, label, share }) => (
                   <div key={label} className="rounded-xl border border-border bg-muted/20 p-3 text-center">
                     <p className="text-lg mb-0.5">{emoji}</p>
                     <p className="text-[11px] text-muted-foreground">{label}</p>
                     <p className="text-xl font-bold text-foreground mt-1">
-                      {Math.round(derivedCals / 3).toLocaleString()}
+                      {Math.round(derivedCals * share).toLocaleString()}
                     </p>
                     <p className="text-[10px] text-muted-foreground">kcal</p>
                     <div className="mt-1.5 pt-1.5 border-t border-border/50 grid grid-cols-3 gap-0.5 text-[9px] text-muted-foreground">
-                      <span>{Math.round(profile.macros.protein / 3)}g P</span>
-                      <span>{Math.round(profile.macros.carbs / 3)}g C</span>
-                      <span>{Math.round(profile.macros.fat / 3)}g F</span>
+                      <span>{Math.round(profile.macros.protein * share)}g P</span>
+                      <span>{Math.round(profile.macros.carbs * share)}g C</span>
+                      <span>{Math.round(profile.macros.fat * share)}g F</span>
                     </div>
                   </div>
                 ))}
@@ -612,8 +621,8 @@ export default function KitchenPage() {
                     className="w-full accent-primary"
                   />
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Recommended: {Math.round(profile.weightKg * 1.6)}–{Math.round(profile.weightKg * 2.2)} g/day
-                    ({(profile.weightKg * 1.6 / (profile.macros.protein || 1) * 100).toFixed(0)}% of your body weight target)
+                    General adults: {Math.round(profile.weightKg * 0.8)}–{Math.round(profile.weightKg * 1.2)} g/day (0.8–1.2 g/kg) ·
+                    Active / muscle building: {Math.round(profile.weightKg * 1.4)}–{Math.round(profile.weightKg * 1.8)} g/day
                   </p>
                 </div>
 

@@ -61,8 +61,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 12,
     prepTime: 8,
     servings: 2,
-    macros: { calories: 305, protein: 20, carbs: 14, fat: 18 },
-    tags: ["vegetarian", "high-protein", "gluten-free", "quick", "spicy"],
+    macros: { calories: 310, protein: 15, carbs: 12, fat: 22 },
+    tags: ["vegetarian", "gluten-free", "quick", "spicy"],
     source: "seed",
     ingredients: [
       { amount: "4", item: "eggs", perishable: true, shelfDays: 21 },
@@ -90,8 +90,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 0,
     prepTime: 8,
     servings: 2,
-    macros: { calories: 490, protein: 34, carbs: 44, fat: 18 },
-    tags: ["high-protein", "no-cook", "quick", "dairy-free-option"],
+    macros: { calories: 445, protein: 25, carbs: 58, fat: 12 },
+    tags: ["no-cook", "quick", "dairy-free-option"],
     source: "seed",
     ingredients: [
       { amount: "2", item: "everything bagels, toasted" },
@@ -119,7 +119,7 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 0,
     prepTime: 8,
     servings: 2,
-    macros: { calories: 340, protein: 10, carbs: 46, fat: 14 },
+    macros: { calories: 460, protein: 8, carbs: 42, fat: 30 },
     tags: ["vegan", "dairy-free", "meal-prep", "no-cook", "gluten-free"],
     source: "seed",
     ingredients: [
@@ -177,8 +177,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 12,
     prepTime: 5,
     servings: 2,
-    macros: { calories: 415, protein: 36, carbs: 34, fat: 14 },
-    tags: ["high-protein", "vegetarian", "quick", "meal-prep"],
+    macros: { calories: 355, protein: 22, carbs: 38, fat: 12 },
+    tags: ["vegetarian", "quick", "meal-prep"],
     source: "seed",
     ingredients: [
       { amount: "1 cup", item: "full-fat cottage cheese", perishable: true, shelfDays: 7 },
@@ -205,8 +205,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 12,
     prepTime: 8,
     servings: 2,
-    macros: { calories: 275, protein: 22, carbs: 16, fat: 14 },
-    tags: ["vegan", "dairy-free", "high-protein", "low-carb", "gluten-free"],
+    macros: { calories: 295, protein: 18, carbs: 14, fat: 18 },
+    tags: ["vegan", "dairy-free", "low-carb", "gluten-free"],
     source: "seed",
     ingredients: [
       { amount: "14 oz", item: "firm tofu, crumbled", perishable: true, shelfDays: 5 },
@@ -235,8 +235,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 18,
     prepTime: 10,
     servings: 2,
-    macros: { calories: 345, protein: 24, carbs: 18, fat: 20 },
-    tags: ["vegetarian", "gluten-free", "high-protein", "low-carb"],
+    macros: { calories: 390, protein: 20, carbs: 20, fat: 24 },
+    tags: ["vegetarian", "gluten-free", "low-carb"],
     source: "seed",
     ingredients: [
       { amount: "4", item: "eggs", perishable: true, shelfDays: 21 },
@@ -266,8 +266,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 30,
     prepTime: 5,
     servings: 2,
-    macros: { calories: 265, protein: 12, carbs: 42, fat: 5 },
-    tags: ["dairy-free", "gluten-free", "low-fat", "comforting"],
+    macros: { calories: 330, protein: 13, carbs: 44, fat: 8 },
+    tags: ["dairy-free", "gluten-free", "comforting"],
     source: "seed",
     ingredients: [
       { amount: "½ cup", item: "short-grain white rice" },
@@ -322,8 +322,8 @@ export const BREAKFAST_RECIPES: Recipe[] = [
     cookTime: 35,
     prepTime: 5,
     servings: 2,
-    macros: { calories: 290, protein: 14, carbs: 44, fat: 6 },
-    tags: ["dairy-free", "low-fat", "gluten-free", "meal-prep", "comforting"],
+    macros: { calories: 315, protein: 14, carbs: 44, fat: 8 },
+    tags: ["dairy-free", "gluten-free", "meal-prep", "comforting"],
     source: "seed",
     ingredients: [
       { amount: "½ cup", item: "jasmine rice" },
@@ -356,7 +356,7 @@ export const LUNCH_RECIPES: Recipe[] = [
     cookTime: 12,
     prepTime: 12,
     servings: 2,
-    macros: { calories: 385, protein: 38, carbs: 22, fat: 16 },
+    macros: { calories: 480, protein: 38, carbs: 18, fat: 26 },
     tags: ["high-protein", "gluten-free", "dairy-free", "quick"],
     source: "seed",
     ingredients: [
@@ -452,7 +452,7 @@ export const LUNCH_RECIPES: Recipe[] = [
     cookTime: 18,
     prepTime: 10,
     servings: 2,
-    macros: { calories: 545, protein: 40, carbs: 46, fat: 20 },
+    macros: { calories: 575, protein: 40, carbs: 50, fat: 22 },
     tags: ["high-protein", "spicy", "quick", "dairy-free"],
     source: "seed",
     ingredients: [
@@ -483,7 +483,7 @@ export const LUNCH_RECIPES: Recipe[] = [
     cookTime: 30,
     prepTime: 10,
     servings: 2,
-    macros: { calories: 420, protein: 22, carbs: 60, fat: 10 },
+    macros: { calories: 420, protein: 18, carbs: 60, fat: 12 },
     tags: ["vegan", "dairy-free", "vegetarian", "meal-prep", "gluten-free"],
     source: "seed",
     ingredients: [
@@ -927,7 +927,7 @@ export const DINNER_RECIPES: Recipe[] = [
     cookTime: 25,
     prepTime: 10,
     servings: 2,
-    macros: { calories: 385, protein: 20, carbs: 52, fat: 10 },
+    macros: { calories: 395, protein: 17, carbs: 52, fat: 12 },
     tags: ["vegan", "vegetarian", "dairy-free", "high-fiber", "meal-prep"],
     source: "seed",
     ingredients: [
