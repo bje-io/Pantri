@@ -411,9 +411,11 @@ const STATUS_COLOR: Record<string, string> = {
 function DayTotalsCell({
   actual,
   goals,
+  onRebalance,
 }: {
   actual: DayMacros;
   goals: KitchenGoals;
+  onRebalance: () => void;
 }) {
   const targets = computeGoalTargets(goals);
   const hasData = actual.cal > 0;
@@ -427,14 +429,20 @@ function DayTotalsCell({
 
   if (!hasData) {
     return (
-      <div className="rounded-xl border border-dashed border-border/50 p-2 flex items-center justify-center min-h-[72px]">
-        <span className="text-[9px] text-muted-foreground">—</span>
+      <div className="rounded-xl border border-dashed border-border/50 p-2 flex flex-col items-center justify-between min-h-[88px] gap-1">
+        <span className="text-[9px] text-muted-foreground flex-1 flex items-center">—</span>
+        <button
+          onClick={onRebalance}
+          className="w-full text-[9px] font-medium text-primary/60 hover:text-primary bg-primary/5 hover:bg-primary/10 rounded-lg py-1 transition-all"
+        >
+          🎯 Balance
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-2 space-y-1 min-h-[72px]">
+    <div className="rounded-xl border border-border bg-card p-2 space-y-1 min-h-[88px]">
       {rows.map(({ label, val, target, unit }) => {
         const st = macroStatus(val, target);
         const barPct = Math.min((val / target) * 100, 130);
@@ -456,6 +464,12 @@ function DayTotalsCell({
           </div>
         );
       })}
+      <button
+        onClick={onRebalance}
+        className="w-full text-[9px] font-medium text-primary/60 hover:text-primary bg-primary/5 hover:bg-primary/10 rounded-lg py-1 transition-all mt-0.5"
+      >
+        🎯 Balance
+      </button>
     </div>
   );
 }
@@ -892,6 +906,69 @@ export default function PlannerPage() {
     }));
   }
 
+  /**
+   * Rebalance a single day: swap each non-locked meal to the recipe whose macros
+   * best match per-meal targets (using 25/35/40% breakfast/lunch/dinner split).
+   *
+   * "Same for all" handling:
+   *   - If sameForAll[type] is on, the meal is "pinned" — day 0 holds the master
+   *     recipe. We update day 0 here, which updates the display for ALL days of
+   *     THIS week. Other weeks are stored independently in localStorage and are
+   *     completely unaffected.
+   *   - If sameForAll[type] is off, only the clicked day's slot is changed.
+   */
+  function rebalanceDayMeals(dayIndex: number) {
+    const combined = buildCombinedPool();
+    const dailyCal = derivedCalories(kitchenGoals.macros);
+
+    // Meal-weighted calorie/macro targets (25% breakfast · 35% lunch · 40% dinner)
+    const MEAL_SHARES: Record<MealType, number> = {
+      breakfast: 0.25,
+      lunch:     0.35,
+      dinner:    0.40,
+    };
+
+    function scoreFn(r: Recipe, type: MealType): number {
+      const share = MEAL_SHARES[type];
+      const t = {
+        cal:  dailyCal                    * share,
+        pro:  kitchenGoals.macros.protein * share,
+        carb: kitchenGoals.macros.carbs   * share,
+        fat:  kitchenGoals.macros.fat     * share,
+      };
+      const d = (a: number, target: number) => target > 0 ? Math.abs(a - target) / target : 0;
+      return d(r.macros.calories, t.cal)  * 2
+           + d(r.macros.protein,  t.pro)
+           + d(r.macros.carbs,    t.carb) * 0.5
+           + d(r.macros.fat,      t.fat)  * 0.5;
+    }
+
+    // Pick best recipe per meal type
+    const picks = {} as Record<MealType, Recipe | null>;
+    for (const { type } of MEAL_LABELS) {
+      const base = applyKitchenFilters(
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+      );
+      picks[type] = base.length > 0
+        ? [...base].sort((a, b) => scoreFn(a, type) - scoreFn(b, type))[0]
+        : null;
+    }
+
+    updatePlan((prev) => ({
+      ...prev,
+      days: prev.days.map((day, i) => {
+        const newMeals = { ...day.meals };
+        for (const { type } of MEAL_LABELS) {
+          // Determine which slot index to write to for this meal type
+          const targetIdx = sameForAll[type] ? 0 : dayIndex;
+          if (i !== targetIdx) continue; // only touch the appropriate day index
+          if (picks[type]) newMeals[type] = { recipe: picks[type]! };
+        }
+        return { ...day, meals: newMeals };
+      }),
+    }));
+  }
+
   const pickerDay = pickerTarget ? plan.days[pickerTarget.dayIndex] : null;
   const pickerCurrentRecipe =
     pickerTarget && pickerDay ? pickerDay.meals[pickerTarget.mealType].recipe : null;
@@ -1106,7 +1183,12 @@ export default function PlannerPage() {
                 <span className="text-[8px] text-muted-foreground">/{kitchenGoals.dailyCalories}cal</span>
               </div>
               {plan.days.map((_, di) => (
-                <DayTotalsCell key={di} actual={getDayMacros(di)} goals={kitchenGoals} />
+                <DayTotalsCell
+                  key={di}
+                  actual={getDayMacros(di)}
+                  goals={kitchenGoals}
+                  onRebalance={() => rebalanceDayMeals(di)}
+                />
               ))}
             </div>
           </div>
