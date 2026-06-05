@@ -66,8 +66,13 @@ export default function GeneratePage() {
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [savedToRecipes, setSavedToRecipes] = useState(false);
 
-  // Kitchen profile — auto-loaded, sent to AI with every request
+  // Kitchen profile — auto-loaded; useKitchen controls whether it's sent to AI
   const [kitchenProfile, setKitchenProfile] = useState<Record<string, unknown> | null>(null);
+  const [useKitchen, setUseKitchen] = useState(true);
+  // Cached profile-derived values so we can restore them when re-enabling
+  const [profileCals, setProfileCals] = useState("");
+  const [profileCookTime, setProfileCookTime] = useState("");
+  const [profileServings, setProfileServings] = useState("2");
 
   useEffect(() => {
     const p = loadKitchenProfile();
@@ -77,12 +82,28 @@ export default function GeneratePage() {
       const macros = p.macros as { protein: number; carbs: number; fat: number } | undefined;
       if (macros) {
         const total = derivedCalories(macros);
-        setCalories(String(Math.round(total / 3)));
+        const cals = String(Math.round(total / 3));
+        setCalories(cals);
+        setProfileCals(cals);
       }
-      if (p.cookTimeMax) setCookTime(String(p.cookTimeMax));
-      if (p.servings)    setServings(String(p.servings));
+      if (p.cookTimeMax) { setCookTime(String(p.cookTimeMax)); setProfileCookTime(String(p.cookTimeMax)); }
+      if (p.servings)    { setServings(String(p.servings));    setProfileServings(String(p.servings)); }
     }
   }, []);
+
+  function toggleKitchen(next: boolean) {
+    setUseKitchen(next);
+    if (next) {
+      // Restore profile-derived form values
+      if (profileCals)     setCalories(profileCals);
+      if (profileCookTime) setCookTime(profileCookTime);
+      if (profileServings) setServings(profileServings);
+    } else {
+      // Clear the profile-derived pre-fills so user starts fresh
+      setCalories("");
+      setCookTime("");
+    }
+  }
 
   // Derived display values from kitchen profile
   const profileMacros  = kitchenProfile?.macros as { protein: number; carbs: number; fat: number } | undefined;
@@ -103,7 +124,7 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, prompt, calories, cookTime, servings, kitchenProfile }),
+        body: JSON.stringify({ mode, prompt, calories, cookTime, servings, kitchenProfile: useKitchen ? kitchenProfile : null }),
       });
 
       const data = await res.json();
@@ -356,54 +377,81 @@ export default function GeneratePage() {
         <>
           {/* Kitchen Profile Banner */}
           {kitchenProfile ? (
-            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 mb-6">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">🍽️</span>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Kitchen profile active</p>
-                    <p className="text-xs text-muted-foreground">Sage will automatically follow your goals, restrictions &amp; macro targets</p>
-                  </div>
+            <div className={cn(
+              "rounded-2xl border p-4 mb-6 transition-all",
+              useKitchen
+                ? "border-primary/20 bg-primary/5"
+                : "border-border bg-muted/20"
+            )}>
+              {/* Header row: icon + label + toggle + edit link */}
+              <div className="flex items-center gap-3 mb-3">
+                <span className={cn("text-lg transition-opacity", !useKitchen && "opacity-40")}>🍽️</span>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-sm font-semibold", useKitchen ? "text-foreground" : "text-muted-foreground")}>
+                    {useKitchen ? "Kitchen profile active" : "Kitchen profile off"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {useKitchen
+                      ? "Sage will follow your calorie targets, macros & restrictions"
+                      : "Sage will use your prompt only — no calorie or macro targets"}
+                  </p>
                 </div>
-                <Link href="/kitchen" className="text-xs text-primary hover:underline shrink-0 mt-0.5">
+
+                {/* Toggle */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useKitchen}
+                  onClick={() => toggleKitchen(!useKitchen)}
+                  className={cn(
+                    "relative shrink-0 h-6 w-11 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    useKitchen ? "bg-primary" : "bg-muted-foreground/30"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+                    useKitchen ? "translate-x-5" : "translate-x-0"
+                  )} />
+                </button>
+
+                <Link href="/kitchen" className={cn("text-xs shrink-0 mt-0.5 transition-colors", useKitchen ? "text-primary hover:underline" : "text-muted-foreground hover:text-foreground")}>
                   Edit →
                 </Link>
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {/* Calorie target */}
-                {perMealCals && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-background border border-border text-xs font-medium text-foreground">
-                    🔥 ~{perMealCals} cal/meal
-                  </span>
-                )}
-                {/* Per-meal macros */}
-                {profileMacros && (
-                  <>
-                    <span className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
-                      P {Math.round(profileMacros.protein / 3)}g
+              {/* Macro / restriction chips — only when active */}
+              {useKitchen && (
+                <div className="flex flex-wrap gap-1.5">
+                  {perMealCals && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-background border border-border text-xs font-medium text-foreground">
+                      🔥 ~{perMealCals} cal/meal
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20 text-xs font-medium text-accent">
-                      C {Math.round(profileMacros.carbs / 3)}g
+                  )}
+                  {profileMacros && (
+                    <>
+                      <span className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
+                        P {Math.round(profileMacros.protein / 3)}g
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20 text-xs font-medium text-accent">
+                        C {Math.round(profileMacros.carbs / 3)}g
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-xs font-medium text-yellow-700 dark:text-yellow-400">
+                        F {Math.round(profileMacros.fat / 3)}g
+                      </span>
+                    </>
+                  )}
+                  {dietaryPrefs.map((pref) => (
+                    <span key={pref} className="px-2.5 py-1 rounded-full bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-xs font-medium text-green-700 dark:text-green-400 capitalize">
+                      ✓ {pref}
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-xs font-medium text-yellow-700 dark:text-yellow-400">
-                      F {Math.round(profileMacros.fat / 3)}g
+                  ))}
+                  {allergies.map((a) => (
+                    <span key={a} className="px-2.5 py-1 rounded-full bg-destructive/10 border border-destructive/20 text-xs font-medium text-destructive capitalize">
+                      ⚠ no {a}
                     </span>
-                  </>
-                )}
-                {/* Dietary prefs */}
-                {dietaryPrefs.map((pref) => (
-                  <span key={pref} className="px-2.5 py-1 rounded-full bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-xs font-medium text-green-700 dark:text-green-400 capitalize">
-                    ✓ {pref}
-                  </span>
-                ))}
-                {/* Allergies */}
-                {allergies.map((a) => (
-                  <span key={a} className="px-2.5 py-1 rounded-full bg-destructive/10 border border-destructive/20 text-xs font-medium text-destructive capitalize">
-                    ⚠ no {a}
-                  </span>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-4 mb-6 flex items-center justify-between gap-3">
@@ -453,7 +501,7 @@ export default function GeneratePage() {
             {/* Overrides */}
             <div className="mt-4">
               <p className="text-xs text-muted-foreground mb-2">
-                Override defaults{kitchenProfile ? " (pre-filled from your kitchen profile)" : ""}
+                {kitchenProfile && useKitchen ? "Override kitchen targets (optional)" : "Optional constraints"}
               </p>
               <div className="grid grid-cols-3 gap-3">
                 {[
