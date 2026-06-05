@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { saveCustomRecipe, loadKitchenProfile, derivedCalories } from "@/lib/local-store";
+import { saveCustomRecipe, saveWeekPlan, loadKitchenProfile, derivedCalories } from "@/lib/local-store";
+import type { MealType, Recipe, WeekPlan as StoredWeekPlan } from "@/lib/meal-data";
 
 const EXAMPLE_PROMPTS = [
   "High protein week, no red meat, mix of Asian cuisines",
@@ -65,6 +66,14 @@ export default function GeneratePage() {
   const [recipe, setRecipe] = useState<SingleRecipe | null>(null);
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [savedToRecipes, setSavedToRecipes] = useState(false);
+
+  // Week-plan save state
+  type WeekSaveMode = "none" | "pick-week" | "select-meals";
+  const [weekSaveMode, setWeekSaveMode] = useState<WeekSaveMode>("none");
+  const [selectedMeals, setSelectedMeals] = useState<Set<string>>(new Set()); // "dayIndex-mealType"
+  const [savedAllRecipes, setSavedAllRecipes] = useState(false);
+  const [savedWeekStart, setSavedWeekStart] = useState<string | null>(null);
+  const [savedPickedCount, setSavedPickedCount] = useState<number | null>(null);
 
   // Kitchen profile — auto-loaded; useKitchen controls whether it's sent to AI
   const [kitchenProfile, setKitchenProfile] = useState<Record<string, unknown> | null>(null);
@@ -174,6 +183,110 @@ export default function GeneratePage() {
     setWeekPlan(null);
     setErrorMsg("");
     setSavedToRecipes(false);
+    setWeekSaveMode("none");
+    setSelectedMeals(new Set());
+    setSavedAllRecipes(false);
+    setSavedWeekStart(null);
+    setSavedPickedCount(null);
+  }
+
+  // ── Week-plan helpers ──────────────────────────────────────────
+
+  function getUpcomingWeeks(count: number) {
+    const now = new Date();
+    const thisSunday = new Date(now);
+    thisSunday.setDate(now.getDate() - now.getDay());
+    thisSunday.setHours(0, 0, 0, 0);
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(thisSunday);
+      d.setDate(thisSunday.getDate() + i * 7);
+      const iso = d.toISOString().split("T")[0];
+      const label =
+        i === 0 ? "This week" :
+        i === 1 ? "Next week" :
+        d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return { weekStart: iso, label };
+    });
+  }
+
+  function buildRecipe(meal: DayMeal, mealType: MealType, id: string): Recipe {
+    return {
+      id,
+      title: meal.name,
+      cuisine: "International",
+      mealType: [mealType],
+      cookTime: meal.cookTime,
+      prepTime: 0,
+      servings: 2,
+      macros: { calories: meal.calories, protein: 0, carbs: 0, fat: 0 },
+      ingredients: [],
+      steps: [],
+      tags: [...(meal.tags ?? []), "Sage"],
+      source: "ai",
+    };
+  }
+
+  function saveAllWeekRecipes() {
+    if (!weekPlan) return;
+    weekPlan.days.forEach((day, di) => {
+      (["breakfast", "lunch", "dinner"] as const).forEach((mealType) => {
+        saveCustomRecipe(buildRecipe(day[mealType], mealType, `sage-week-${di}-${mealType}-${Date.now()}`));
+      });
+    });
+    setSavedAllRecipes(true);
+  }
+
+  function addWeekToPlanner(weekStart: string) {
+    if (!weekPlan) return;
+    const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const recipesMap: Record<string, Recipe> = {};
+    weekPlan.days.forEach((day, di) => {
+      (["breakfast", "lunch", "dinner"] as const).forEach((mealType) => {
+        const id = `sage-${weekStart}-d${di}-${mealType}`;
+        const r = buildRecipe(day[mealType], mealType, id);
+        saveCustomRecipe(r);
+        recipesMap[`${di}-${mealType}`] = r;
+      });
+    });
+    const plan: StoredWeekPlan = {
+      weekStart,
+      days: DAYS.map((dayName, di) => ({
+        day: dayName,
+        isCheatDay: false,
+        meals: {
+          breakfast: { recipe: recipesMap[`${di}-breakfast`] ?? null },
+          lunch:     { recipe: recipesMap[`${di}-lunch`]     ?? null },
+          dinner:    { recipe: recipesMap[`${di}-dinner`]    ?? null },
+        },
+      })),
+    };
+    saveWeekPlan(plan);
+    setSavedWeekStart(weekStart);
+    setWeekSaveMode("none");
+  }
+
+  function toggleMealSelection(key: string) {
+    setSelectedMeals((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function savePickedMeals() {
+    if (!weekPlan) return;
+    let count = 0;
+    weekPlan.days.forEach((day, di) => {
+      (["breakfast", "lunch", "dinner"] as const).forEach((mealType) => {
+        const key = `${di}-${mealType}`;
+        if (!selectedMeals.has(key)) return;
+        saveCustomRecipe(buildRecipe(day[mealType], mealType, `sage-pick-${di}-${mealType}-${Date.now()}`));
+        count++;
+      });
+    });
+    setSavedPickedCount(count);
+    setWeekSaveMode("none");
+    setSelectedMeals(new Set());
   }
 
   const totalMacros = recipe ? recipe.protein + recipe.carbs + recipe.fat : 0;
@@ -330,8 +443,9 @@ export default function GeneratePage() {
             </button>
           </div>
 
+          {/* Day cards */}
           <div className="space-y-3">
-            {weekPlan.days.map((day) => (
+            {weekPlan.days.map((day, di) => (
               <div key={day.day} className="rounded-2xl border border-border bg-card overflow-hidden">
                 <div className="bg-muted/40 px-4 py-2 border-b border-border">
                   <p className="font-semibold text-sm text-foreground">{day.day}</p>
@@ -339,11 +453,34 @@ export default function GeneratePage() {
                 <div className="divide-y divide-border">
                   {(["breakfast", "lunch", "dinner"] as const).map((mealType) => {
                     const meal = day[mealType];
+                    const key = `${di}-${mealType}`;
+                    const isSelected = selectedMeals.has(key);
                     return (
-                      <div key={mealType} className="px-4 py-3 flex items-start justify-between gap-4">
-                        <div className="flex items-start gap-3 min-w-0">
+                      <div
+                        key={mealType}
+                        className={cn(
+                          "px-4 py-3 flex items-start gap-3 transition-colors",
+                          weekSaveMode === "select-meals" && isSelected && "bg-primary/5"
+                        )}
+                      >
+                        {/* Checkbox in select mode */}
+                        {weekSaveMode === "select-meals" && (
+                          <button
+                            type="button"
+                            onClick={() => toggleMealSelection(key)}
+                            className={cn(
+                              "mt-1 shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-colors",
+                              isSelected
+                                ? "bg-primary border-primary text-primary-foreground"
+                                : "border-border bg-background"
+                            )}
+                          >
+                            {isSelected && <span className="text-[10px] font-bold leading-none">✓</span>}
+                          </button>
+                        )}
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
                           <span className="text-lg shrink-0 mt-0.5">{MEAL_ICONS[mealType]}</span>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-xs font-medium text-muted-foreground capitalize mb-0.5">{mealType}</p>
                             <p className="text-sm font-medium text-foreground truncate">{meal.name}</p>
                             <p className="text-xs text-muted-foreground line-clamp-1">{meal.description}</p>
@@ -361,14 +498,131 @@ export default function GeneratePage() {
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-4">
-            <Link href="/planner" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90 text-primary-foreground")}>
-              📅 Add to Planner
-            </Link>
-            <button onClick={handleReset} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              ✨ Generate Again
-            </button>
+          {/* Action panel */}
+          <div className="mt-5 rounded-2xl border border-border bg-card p-5">
+            <p className="text-sm font-semibold text-foreground mb-4">What would you like to do with this week?</p>
+
+            <div className="flex flex-wrap gap-2 mb-4">
+              {/* Save all */}
+              <button
+                onClick={saveAllWeekRecipes}
+                disabled={savedAllRecipes}
+                className={cn(
+                  buttonVariants({ size: "sm", variant: "outline" }),
+                  savedAllRecipes && "opacity-60 cursor-default"
+                )}
+              >
+                {savedAllRecipes ? "✓ All recipes saved" : "📚 Save all to My Recipes"}
+              </button>
+
+              {/* Add to a week */}
+              <button
+                onClick={() => setWeekSaveMode(weekSaveMode === "pick-week" ? "none" : "pick-week")}
+                className={cn(
+                  buttonVariants({ size: "sm", variant: weekSaveMode === "pick-week" ? "default" : "outline" }),
+                  weekSaveMode === "pick-week" && "bg-primary text-primary-foreground"
+                )}
+              >
+                📅 Add to a week
+              </button>
+
+              {/* Select individual meals */}
+              <button
+                onClick={() => {
+                  if (weekSaveMode === "select-meals") {
+                    setWeekSaveMode("none");
+                    setSelectedMeals(new Set());
+                  } else {
+                    setWeekSaveMode("select-meals");
+                  }
+                }}
+                className={cn(
+                  buttonVariants({ size: "sm", variant: weekSaveMode === "select-meals" ? "default" : "outline" }),
+                  weekSaveMode === "select-meals" && "bg-primary text-primary-foreground"
+                )}
+              >
+                ☑️ Select meals
+              </button>
+            </div>
+
+            {/* Week picker */}
+            {weekSaveMode === "pick-week" && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">Choose which week to fill:</p>
+                <div className="flex flex-wrap gap-2">
+                  {getUpcomingWeeks(5).map(({ weekStart, label }) => (
+                    <button
+                      key={weekStart}
+                      onClick={() => addWeekToPlanner(weekStart)}
+                      className={cn(
+                        buttonVariants({ size: "sm" }),
+                        savedWeekStart === weekStart
+                          ? "bg-green-600 hover:bg-green-600 text-white"
+                          : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                      )}
+                    >
+                      {savedWeekStart === weekStart ? `✓ ${label}` : label}
+                    </button>
+                  ))}
+                </div>
+                {savedWeekStart && (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-3">
+                    ✓ Added to planner —{" "}
+                    <Link href="/planner" className="underline underline-offset-2">
+                      go to planner →
+                    </Link>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Select meals — save button + instructions */}
+            {weekSaveMode === "select-meals" && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">
+                  Tap the meals above you want to keep, then save.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={savePickedMeals}
+                    disabled={selectedMeals.size === 0}
+                    className={cn(
+                      buttonVariants({ size: "sm" }),
+                      selectedMeals.size === 0
+                        ? "opacity-40 cursor-not-allowed bg-primary text-primary-foreground"
+                        : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                    )}
+                  >
+                    Save {selectedMeals.size > 0 ? `${selectedMeals.size} ` : ""}selected
+                  </button>
+                  <button
+                    onClick={() => { setWeekSaveMode("none"); setSelectedMeals(new Set()); }}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Confirmation messages */}
+            {savedPickedCount !== null && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-3">
+                ✓ {savedPickedCount} recipe{savedPickedCount !== 1 ? "s" : ""} saved to{" "}
+                <Link href="/recipes" className="underline underline-offset-2">My Recipes →</Link>
+              </p>
+            )}
+            {savedAllRecipes && !savedPickedCount && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-3">
+                ✓ All 21 recipes saved to{" "}
+                <Link href="/recipes" className="underline underline-offset-2">My Recipes →</Link>
+              </p>
+            )}
           </div>
+
+          <button onClick={handleReset} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-4")}>
+            ✨ Generate Again
+          </button>
         </div>
       )}
 
