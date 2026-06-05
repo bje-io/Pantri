@@ -859,48 +859,168 @@ export default function PlannerPage() {
   }
 
   /**
-   * Rebalance: re-assign every meal slot using the recipe from the pool
-   * whose macros are closest to the per-meal targets derived from the
-   * user's daily goals. Calories are weighted 2×, protein 1×, carbs/fat 0.5×.
-   * Days cycle through the ranked pool so all 7 days still get variety.
+   * Rebalance the ENTIRE week to get as close as possible to the weekly
+   * calorie/macro goals.
+   *
+   * Algorithm:
+   *  1. Start with a "remaining weekly budget" = daily goal × 7.
+   *  2. Handle "sameForAll" meal types first — each repeats 7 days, so its
+   *     recipe is chosen to match (weeklyBudget × mealShare) / 7 per day,
+   *     then 7× its macros are deducted from the remaining budget.
+   *  3. For the remaining (non-pinned) meal slots, iterate day by day.
+   *     After each day is assigned, subtract its actual macros so the next
+   *     day's target recalculates from what's left — this means early
+   *     over-target days automatically shift later days lighter, and vice versa.
+   *  4. Variety: already-used recipe IDs receive a 0.25 score penalty so the
+   *     algorithm prefers fresh options across the 7 days.
+   *
+   * Scoring: |actual − target| / target, weighted cal×2, pro×1, carb×0.5, fat×0.5.
+   * Meal-share split: breakfast 25%, lunch 35%, dinner 40% of daily target.
    */
   function rebalanceMeals() {
-    const combined = buildCombinedPool();
-    const dailyCal = derivedCalories(kitchenGoals.macros);
+    const combined  = buildCombinedPool();
+    const dailyCal  = derivedCalories(kitchenGoals.macros);
 
-    const perMeal = {
-      cal:  dailyCal                     / 3,
-      pro:  kitchenGoals.macros.protein  / 3,
-      carb: kitchenGoals.macros.carbs    / 3,
-      fat:  kitchenGoals.macros.fat      / 3,
+    // Meal-weighted split: breakfast 25%, lunch 35%, dinner 40%
+    const MEAL_SHARES: Record<MealType, number> = {
+      breakfast: 0.25,
+      lunch:     0.35,
+      dinner:    0.40,
     };
 
-    function score(r: Recipe): number {
-      const d = (a: number, t: number) => t > 0 ? Math.abs(a - t) / t : 0;
-      return d(r.macros.calories, perMeal.cal)  * 2
-           + d(r.macros.protein,  perMeal.pro)
-           + d(r.macros.carbs,    perMeal.carb) * 0.5
-           + d(r.macros.fat,      perMeal.fat)  * 0.5;
-    }
-
-    const pools = {} as Record<MealType, Recipe[]>;
+    // Build kitchen-filtered pools per meal type (cheat meals excluded)
+    const pools: Record<MealType, Recipe[]> = {} as Record<MealType, Recipe[]>;
     for (const { type } of MEAL_LABELS) {
-      const base = applyKitchenFilters(
+      pools[type] = applyKitchenFilters(
         combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
       );
-      pools[type] = [...base].sort((a, b) => score(a) - score(b));
     }
 
+    // Scoring fn: how close is recipe r to a given macro target?
+    function score(r: Recipe, target: { cal: number; pro: number; carb: number; fat: number }, usedIds: Set<string>): number {
+      const d = (a: number, t: number) => t > 0 ? Math.abs(a - t) / t : 0;
+      const varietyPenalty = usedIds.has(r.id) ? 0.25 : 0;
+      return d(r.macros.calories, target.cal)  * 2
+           + d(r.macros.protein,  target.pro)
+           + d(r.macros.carbs,    target.carb) * 0.5
+           + d(r.macros.fat,      target.fat)  * 0.5
+           + varietyPenalty;
+    }
+
+    function pickBest(pool: Recipe[], target: { cal: number; pro: number; carb: number; fat: number }, usedIds: Set<string>): Recipe {
+      return [...pool].sort((a, b) => score(a, target, usedIds) - score(b, target, usedIds))[0];
+    }
+
+    // ── Phase 1: resolve sameForAll meals ──────────────────────────
+    // These repeat all 7 days so their total contribution = recipe × 7.
+    // Pick once, deduct 7× from the weekly budget before touching per-day slots.
+    const weeklyRemaining = {
+      cal:  dailyCal                    * 7,
+      pro:  kitchenGoals.macros.protein * 7,
+      carb: kitchenGoals.macros.carbs   * 7,
+      fat:  kitchenGoals.macros.fat     * 7,
+    };
+
+    const usedIds = new Set<string>();
+    const pinnedRecipes: Partial<Record<MealType, Recipe>> = {};
+
+    for (const { type } of MEAL_LABELS) {
+      if (!sameForAll[type]) continue;
+      const pool = pools[type];
+      if (pool.length === 0) continue;
+
+      // Target per day for this meal type
+      const perDayTarget = {
+        cal:  (dailyCal                    / 7) * MEAL_SHARES[type],
+        pro:  (kitchenGoals.macros.protein / 7) * MEAL_SHARES[type],
+        carb: (kitchenGoals.macros.carbs   / 7) * MEAL_SHARES[type],
+        fat:  (kitchenGoals.macros.fat     / 7) * MEAL_SHARES[type],
+      };
+
+      const recipe = pickBest(pool, perDayTarget, usedIds);
+      pinnedRecipes[type] = recipe;
+      usedIds.add(recipe.id);
+
+      // Deduct 7 days' worth from weekly remaining
+      weeklyRemaining.cal  -= recipe.macros.calories * 7;
+      weeklyRemaining.pro  -= recipe.macros.protein  * 7;
+      weeklyRemaining.carb -= recipe.macros.carbs    * 7;
+      weeklyRemaining.fat  -= recipe.macros.fat      * 7;
+    }
+
+    // ── Phase 2: assign non-pinned slots day-by-day ────────────────
+    // Count how many non-pinned meal slots exist per day
+    const nonPinnedTypes = MEAL_LABELS.filter(({ type }) => !sameForAll[type]);
+
+    // Remaining days of budget to distribute (7 days worth for non-pinned meals)
+    const dayBudgetRemaining = { ...weeklyRemaining };
+    let daysLeft = 7;
+
+    // Build day assignments
+    const dayMealPicks: Record<MealType, Recipe>[] = [];
+
+    for (let di = 0; di < 7; di++) {
+      const perDayBudget = {
+        cal:  dayBudgetRemaining.cal  / daysLeft,
+        pro:  dayBudgetRemaining.pro  / daysLeft,
+        carb: dayBudgetRemaining.carb / daysLeft,
+        fat:  dayBudgetRemaining.fat  / daysLeft,
+      };
+
+      const dayPicks: Partial<Record<MealType, Recipe>> = {};
+      let dayActual = { cal: 0, pro: 0, carb: 0, fat: 0 };
+
+      for (const { type } of nonPinnedTypes) {
+        const pool = pools[type];
+        if (pool.length === 0) continue;
+
+        const mealTarget = {
+          cal:  perDayBudget.cal  * MEAL_SHARES[type],
+          pro:  perDayBudget.pro  * MEAL_SHARES[type],
+          carb: perDayBudget.carb * MEAL_SHARES[type],
+          fat:  perDayBudget.fat  * MEAL_SHARES[type],
+        };
+
+        const recipe = pickBest(pool, mealTarget, usedIds);
+        dayPicks[type] = recipe;
+        usedIds.add(recipe.id);
+
+        dayActual.cal  += recipe.macros.calories;
+        dayActual.pro  += recipe.macros.protein;
+        dayActual.carb += recipe.macros.carbs;
+        dayActual.fat  += recipe.macros.fat;
+      }
+
+      dayMealPicks.push(dayPicks as Record<MealType, Recipe>);
+
+      // Subtract this day's actuals from the remaining budget
+      dayBudgetRemaining.cal  -= dayActual.cal;
+      dayBudgetRemaining.pro  -= dayActual.pro;
+      dayBudgetRemaining.carb -= dayActual.carb;
+      dayBudgetRemaining.fat  -= dayActual.fat;
+      daysLeft--;
+    }
+
+    // ── Apply to plan ──────────────────────────────────────────────
     updatePlan((prev) => ({
       ...prev,
       days: prev.days.map((day, di) => {
         const newMeals = { ...day.meals };
+
+        // Apply pinned (sameForAll) recipes to day 0 only
         for (const { type } of MEAL_LABELS) {
-          if (sameForAll[type] && di > 0) continue;
-          const pool = pools[type];
-          if (pool.length === 0) continue;
-          newMeals[type] = { recipe: pool[di % pool.length] };
+          if (!sameForAll[type]) continue;
+          if (di !== 0) continue;
+          const pinned = pinnedRecipes[type];
+          if (pinned) newMeals[type] = { recipe: pinned };
         }
+
+        // Apply day-specific picks
+        for (const { type } of nonPinnedTypes) {
+          const recipe = dayMealPicks[di]?.[type];
+          if (recipe) newMeals[type] = { recipe };
+        }
+
         return { ...day, meals: newMeals };
       }),
     }));
