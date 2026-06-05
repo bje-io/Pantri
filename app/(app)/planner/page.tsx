@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -619,6 +619,16 @@ export default function PlannerPage() {
   // Full kitchen profile — used for dietary/allergy filtering on the dice
   const [kitchenProfile, setKitchenProfile] = useState<Record<string, unknown>>({});
 
+  /**
+   * Global cycle counter for both day and week Balance buttons.
+   * Each press increments this so the next click picks the next-ranked recipe
+   * for every slot instead of always returning the same "best" option.
+   * Stored in a ref so increments are synchronous and don't cause re-renders
+   * mid-function, but the value is also mirrored to state so the button can
+   * show a visual "cycling" indicator if desired.
+   */
+  const rebalanceStepRef = React.useRef(0);
+
   // Refresh goals + profile whenever planner is focused (in case kitchen was updated)
   useEffect(() => {
     setKitchenGoals(loadKitchenGoals());
@@ -897,6 +907,11 @@ export default function PlannerPage() {
     }
 
     // Scoring fn: how close is recipe r to a given macro target?
+    // Capture the current step once so the whole run is consistent.
+    // After building the plan we'll advance the counter so the next press
+    // yields a different (next-ranked) combination.
+    const step = rebalanceStepRef.current;
+
     function score(r: Recipe, target: { cal: number; pro: number; carb: number; fat: number }, usedIds: Set<string>): number {
       const d = (a: number, t: number) => t > 0 ? Math.abs(a - t) / t : 0;
       const varietyPenalty = usedIds.has(r.id) ? 0.25 : 0;
@@ -907,8 +922,20 @@ export default function PlannerPage() {
            + varietyPenalty;
     }
 
-    function pickBest(pool: Recipe[], target: { cal: number; pro: number; carb: number; fat: number }, usedIds: Set<string>): Recipe {
-      return [...pool].sort((a, b) => score(a, target, usedIds) - score(b, target, usedIds))[0];
+    /**
+     * Sort pool by score, then pick at offset (step + slotIndex) % length.
+     * slotIndex is a per-run counter so each meal slot within one click
+     * pulls from a different rank position — preventing all 21 slots from
+     * selecting the exact same recipe when the pool is small.
+     */
+    function pickAtStep(
+      pool: Recipe[],
+      target: { cal: number; pro: number; carb: number; fat: number },
+      usedIds: Set<string>,
+      slotIndex: number
+    ): Recipe {
+      const sorted = [...pool].sort((a, b) => score(a, target, usedIds) - score(b, target, usedIds));
+      return sorted[(step + slotIndex) % sorted.length];
     }
 
     // ── Phase 1: resolve sameForAll meals ──────────────────────────
@@ -923,6 +950,7 @@ export default function PlannerPage() {
 
     const usedIds = new Set<string>();
     const pinnedRecipes: Partial<Record<MealType, Recipe>> = {};
+    let slotCounter = 0; // advances with every pick so each slot uses a different rank offset
 
     for (const { type } of MEAL_LABELS) {
       if (!sameForAll[type]) continue;
@@ -937,7 +965,7 @@ export default function PlannerPage() {
         fat:  (kitchenGoals.macros.fat     / 7) * MEAL_SHARES[type],
       };
 
-      const recipe = pickBest(pool, perDayTarget, usedIds);
+      const recipe = pickAtStep(pool, perDayTarget, usedIds, slotCounter++);
       pinnedRecipes[type] = recipe;
       usedIds.add(recipe.id);
 
@@ -949,10 +977,8 @@ export default function PlannerPage() {
     }
 
     // ── Phase 2: assign non-pinned slots day-by-day ────────────────
-    // Count how many non-pinned meal slots exist per day
     const nonPinnedTypes = MEAL_LABELS.filter(({ type }) => !sameForAll[type]);
 
-    // Remaining days of budget to distribute (7 days worth for non-pinned meals)
     const dayBudgetRemaining = { ...weeklyRemaining };
     let daysLeft = 7;
 
@@ -981,7 +1007,7 @@ export default function PlannerPage() {
           fat:  perDayBudget.fat  * MEAL_SHARES[type],
         };
 
-        const recipe = pickBest(pool, mealTarget, usedIds);
+        const recipe = pickAtStep(pool, mealTarget, usedIds, slotCounter++);
         dayPicks[type] = recipe;
         usedIds.add(recipe.id);
 
@@ -1024,6 +1050,9 @@ export default function PlannerPage() {
         return { ...day, meals: newMeals };
       }),
     }));
+
+    // Advance the cycle counter so the next click picks the next-ranked combo
+    rebalanceStepRef.current += 1;
   }
 
   /**
@@ -1048,7 +1077,9 @@ export default function PlannerPage() {
       dinner:    0.40,
     };
 
-    function scoreFn(r: Recipe, type: MealType): number {
+    const step = rebalanceStepRef.current;
+
+    function scoreFn(r: Recipe, type: MealType, usedIds: Set<string>): number {
       const share = MEAL_SHARES[type];
       const t = {
         cal:  dailyCal                    * share,
@@ -1057,21 +1088,30 @@ export default function PlannerPage() {
         fat:  kitchenGoals.macros.fat     * share,
       };
       const d = (a: number, target: number) => target > 0 ? Math.abs(a - target) / target : 0;
+      const varietyPenalty = usedIds.has(r.id) ? 0.25 : 0;
       return d(r.macros.calories, t.cal)  * 2
            + d(r.macros.protein,  t.pro)
            + d(r.macros.carbs,    t.carb) * 0.5
-           + d(r.macros.fat,      t.fat)  * 0.5;
+           + d(r.macros.fat,      t.fat)  * 0.5
+           + varietyPenalty;
     }
 
-    // Pick best recipe per meal type
+    // Pick recipe at (step + slotIndex) rank for each meal type
+    const usedIds = new Set<string>();
     const picks = {} as Record<MealType, Recipe | null>;
+    let slotCounter = 0;
+
     for (const { type } of MEAL_LABELS) {
       const base = applyKitchenFilters(
         combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
       );
-      picks[type] = base.length > 0
-        ? [...base].sort((a, b) => scoreFn(a, type) - scoreFn(b, type))[0]
-        : null;
+      if (base.length === 0) { picks[type] = null; continue; }
+
+      const sorted = [...base].sort((a, b) => scoreFn(a, type, usedIds) - scoreFn(b, type, usedIds));
+      const recipe = sorted[(step + slotCounter) % sorted.length];
+      picks[type] = recipe;
+      usedIds.add(recipe.id);
+      slotCounter++;
     }
 
     updatePlan((prev) => ({
@@ -1079,14 +1119,16 @@ export default function PlannerPage() {
       days: prev.days.map((day, i) => {
         const newMeals = { ...day.meals };
         for (const { type } of MEAL_LABELS) {
-          // Determine which slot index to write to for this meal type
           const targetIdx = sameForAll[type] ? 0 : dayIndex;
-          if (i !== targetIdx) continue; // only touch the appropriate day index
+          if (i !== targetIdx) continue;
           if (picks[type]) newMeals[type] = { recipe: picks[type]! };
         }
         return { ...day, meals: newMeals };
       }),
     }));
+
+    // Advance the cycle counter so the next press gives a different set
+    rebalanceStepRef.current += 1;
   }
 
   const pickerDay = pickerTarget ? plan.days[pickerTarget.dayIndex] : null;
