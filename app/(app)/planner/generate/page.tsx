@@ -498,30 +498,30 @@ export default function GeneratePage() {
               }
             />
 
-            {/* Overrides */}
-            <div className="mt-4">
-              <p className="text-xs text-muted-foreground mb-2">
-                {kitchenProfile && useKitchen ? "Override kitchen targets (optional)" : "Optional constraints"}
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Max calories", value: calories, set: setCalories, placeholder: "e.g. 600" },
-                  { label: "Max cook time (min)", value: cookTime, set: setCookTime, placeholder: "e.g. 30" },
-                  { label: "Servings", value: servings, set: setServings, placeholder: "e.g. 2" },
-                ].map((field) => (
-                  <div key={field.label}>
-                    <label className="block text-xs text-muted-foreground mb-1">{field.label}</label>
-                    <input
-                      type="number"
-                      value={field.value}
-                      onChange={(e) => field.set(e.target.value)}
-                      placeholder={field.placeholder}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
-                    />
-                  </div>
-                ))}
+            {/* Overrides — hidden when kitchen profile is active */}
+            {!(kitchenProfile && useKitchen) && (
+              <div className="mt-4">
+                <p className="text-xs text-muted-foreground mb-2">Optional constraints</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Max calories", value: calories, set: setCalories, placeholder: "e.g. 600" },
+                    { label: "Max cook time (min)", value: cookTime, set: setCookTime, placeholder: "e.g. 30" },
+                    { label: "Servings", value: servings, set: setServings, placeholder: "e.g. 2" },
+                  ].map((field) => (
+                    <div key={field.label}>
+                      <label className="block text-xs text-muted-foreground mb-1">{field.label}</label>
+                      <input
+                        type="number"
+                        value={field.value}
+                        onChange={(e) => field.set(e.target.value)}
+                        placeholder={field.placeholder}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <button
               onClick={handleGenerate}
