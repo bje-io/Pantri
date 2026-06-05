@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { loadKitchenProfile, saveKitchenProfile, derivedCalories } from "@/lib/local-store";
@@ -14,8 +15,8 @@ type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very-activ
 
 type KitchenProfile = {
   // ── Body stats ──
-  heightCm: number;    // stored in cm; display converts to ft/in when units === "imperial"
-  weightKg: number;    // stored in kg; display converts to lbs when units === "imperial"
+  heightCm: number;
+  weightKg: number;
   age: number;
   sex: "male" | "female";
   activityLevel: ActivityLevel;
@@ -31,18 +32,18 @@ type KitchenProfile = {
   cheatDaysPerWeek: number;
   cheatDayPrefs: string[];
   budgetPerWeek: number;
-  cookTimeMax: number; // minutes
-  goal: "lose-weight" | "maintain" | "build-muscle" | "eat-healthy" | "custom";
+  cookTimeMax: number;
+  goal: "lose-weight" | "maintain" | "build-muscle";
 };
 
 // ── Options ───────────────────────────────────────────────────────
 
 const ACTIVITY_OPTIONS: { id: ActivityLevel; label: string; desc: string; emoji: string; multiplier: number }[] = [
-  { id: "sedentary",   label: "Sedentary",    desc: "Desk job, little or no exercise",      emoji: "🪑", multiplier: 1.2   },
-  { id: "light",       label: "Lightly Active",desc: "Light exercise 1–3 days/week",        emoji: "🚶", multiplier: 1.375 },
-  { id: "moderate",    label: "Moderately Active", desc: "Exercise 3–5 days/week",          emoji: "🏃", multiplier: 1.55  },
-  { id: "active",      label: "Very Active",  desc: "Hard exercise 6–7 days/week",          emoji: "🏋️", multiplier: 1.725 },
-  { id: "very-active", label: "Extremely Active", desc: "Physical job + hard daily training", emoji: "⚡", multiplier: 1.9 },
+  { id: "sedentary",   label: "Sedentary",          desc: "Desk job, little or no exercise",           emoji: "🪑", multiplier: 1.2   },
+  { id: "light",       label: "Lightly Active",      desc: "Light exercise 1–3 days/week",              emoji: "🚶", multiplier: 1.375 },
+  { id: "moderate",    label: "Moderately Active",   desc: "Exercise 3–5 days/week",                    emoji: "🏃", multiplier: 1.55  },
+  { id: "active",      label: "Very Active",         desc: "Hard exercise 6–7 days/week",               emoji: "🏋️", multiplier: 1.725 },
+  { id: "very-active", label: "Extremely Active",    desc: "Physical job + hard daily training",        emoji: "⚡", multiplier: 1.9   },
 ];
 
 const DIETARY_OPTIONS = [
@@ -57,28 +58,28 @@ const DIETARY_OPTIONS = [
 ];
 
 const ALLERGY_OPTIONS = [
-  { id: "nuts",     label: "Tree Nuts" },
-  { id: "peanuts",  label: "Peanuts"   },
-  { id: "shellfish",label: "Shellfish" },
-  { id: "fish",     label: "Fish"      },
-  { id: "eggs",     label: "Eggs"      },
-  { id: "soy",      label: "Soy"       },
-  { id: "sesame",   label: "Sesame"    },
+  { id: "nuts",      label: "Tree Nuts" },
+  { id: "peanuts",   label: "Peanuts"   },
+  { id: "shellfish", label: "Shellfish" },
+  { id: "fish",      label: "Fish"      },
+  { id: "eggs",      label: "Eggs"      },
+  { id: "soy",       label: "Soy"       },
+  { id: "sesame",    label: "Sesame"    },
 ];
 
 const CUISINE_OPTIONS = [
-  { id: "Japanese",      emoji: "🇯🇵" },
-  { id: "Mexican",       emoji: "🇲🇽" },
-  { id: "Greek",         emoji: "🇬🇷" },
-  { id: "Thai",          emoji: "🇹🇭" },
-  { id: "Indian",        emoji: "🇮🇳" },
-  { id: "Italian",       emoji: "🇮🇹" },
-  { id: "American",      emoji: "🇺🇸" },
-  { id: "Mediterranean", emoji: "🌊" },
-  { id: "Chinese",       emoji: "🇨🇳" },
-  { id: "Korean",        emoji: "🇰🇷" },
-  { id: "French",        emoji: "🇫🇷" },
-  { id: "Middle Eastern",emoji: "🌙" },
+  { id: "Japanese",       emoji: "🇯🇵" },
+  { id: "Mexican",        emoji: "🇲🇽" },
+  { id: "Greek",          emoji: "🇬🇷" },
+  { id: "Thai",           emoji: "🇹🇭" },
+  { id: "Indian",         emoji: "🇮🇳" },
+  { id: "Italian",        emoji: "🇮🇹" },
+  { id: "American",       emoji: "🇺🇸" },
+  { id: "Mediterranean",  emoji: "🌊"  },
+  { id: "Chinese",        emoji: "🇨🇳" },
+  { id: "Korean",         emoji: "🇰🇷" },
+  { id: "French",         emoji: "🇫🇷" },
+  { id: "Middle Eastern", emoji: "🌙"  },
 ];
 
 const CHEAT_PREF_OPTIONS = [
@@ -93,40 +94,25 @@ const CHEAT_PREF_OPTIONS = [
 ];
 
 const GOAL_OPTIONS = [
-  { id: "lose-weight",  label: "Lose Weight",   emoji: "⬇️", desc: "Calorie deficit, high protein, smart carbs"     },
-  { id: "maintain",     label: "Maintain",       emoji: "⚖️", desc: "Balanced macros, sustainable variety"          },
-  { id: "build-muscle", label: "Build Muscle",   emoji: "💪", desc: "High protein, calorie surplus, nutrient-dense" },
-  { id: "eat-healthy",  label: "Eat Healthier",  emoji: "🥗", desc: "Whole foods, less processed, more variety"     },
-  { id: "custom",       label: "Custom",         emoji: "⚙️", desc: "Set your own targets manually"                 },
+  { id: "lose-weight",  label: "Lose Weight",  emoji: "⬇️", desc: "Calorie deficit, high protein, smart carbs"     },
+  { id: "maintain",     label: "Maintain",     emoji: "⚖️", desc: "Balanced macros, sustainable variety"           },
+  { id: "build-muscle", label: "Build Muscle", emoji: "💪", desc: "High protein, calorie surplus, nutrient-dense"  },
 ] as const;
 
-// Macro calorie-ratio targets per goal (for TDEE-based auto-fill).
-// Evidence-based: protein 0.8–1.6 g/kg covers sedentary to active adults.
-// Translating to % of calories: ~20–26% protein is realistic for most goals.
-// High-protein "lose-weight" research supports ~25% protein for muscle preservation.
 const GOAL_MACRO_RATIOS: Record<string, { p: number; c: number; f: number }> = {
   "lose-weight":  { p: 0.25, c: 0.45, f: 0.30 },
   maintain:       { p: 0.20, c: 0.50, f: 0.30 },
   "build-muscle": { p: 0.24, c: 0.46, f: 0.30 },
-  "eat-healthy":  { p: 0.20, c: 0.50, f: 0.30 },
-  custom:         { p: 0.22, c: 0.48, f: 0.30 },
 };
 
-// Static gram fallbacks (used when no body stats are entered).
-// Aligned with what seed recipes actually deliver so the green zone is reachable:
-//   recipes avg ~390 kcal breakfast · ~460 kcal lunch · ~470 kcal dinner = ~1,320/day
-//   targets set ~10–20% above to account for snacks and variation.
 const GOAL_DEFAULTS: Record<string, Partial<KitchenProfile>> = {
-  "lose-weight":  { macros: { protein: 85,  carbs: 150, fat: 42  } },  // 1,318 kcal
-  maintain:       { macros: { protein: 90,  carbs: 210, fat: 52  } },  // 1,668 kcal
-  "build-muscle": { macros: { protein: 120, carbs: 240, fat: 57  } },  // 1,953 kcal
-  "eat-healthy":  { macros: { protein: 90,  carbs: 175, fat: 45  } },  // 1,465 kcal
-  custom:         {},
+  "lose-weight":  { macros: { protein: 85,  carbs: 150, fat: 42 } },  // ~1,318 kcal
+  maintain:       { macros: { protein: 90,  carbs: 210, fat: 52 } },  // ~1,668 kcal
+  "build-muscle": { macros: { protein: 120, carbs: 240, fat: 57 } },  // ~1,953 kcal
 };
 
 // ── TDEE helpers ──────────────────────────────────────────────────
 
-/** Mifflin-St Jeor BMR × activity multiplier → TDEE */
 function calcTDEE(p: KitchenProfile): number | null {
   if (!p.heightCm || !p.weightKg || !p.age) return null;
   const bmr =
@@ -137,14 +123,12 @@ function calcTDEE(p: KitchenProfile): number | null {
   return Math.round(bmr * multiplier);
 }
 
-/** Adjust TDEE for the selected goal */
 function goalAdjustedCalories(tdee: number, goal: string): number {
   if (goal === "lose-weight")  return Math.max(1200, Math.round(tdee - 500));
   if (goal === "build-muscle") return Math.round(tdee + 300);
   return Math.round(tdee);
 }
 
-/** Convert goal-adjusted calories → macro grams using goal ratio */
 function calsToMacros(calories: number, goal: string): MacroGrams {
   const r = GOAL_MACRO_RATIOS[goal] ?? GOAL_MACRO_RATIOS.maintain;
   return {
@@ -152,6 +136,13 @@ function calsToMacros(calories: number, goal: string): MacroGrams {
     carbs:   Math.round((calories * r.c) / 4),
     fat:     Math.round((calories * r.f) / 9),
   };
+}
+
+/** Recalculate macros from TDEE for the given profile snapshot (returns same macros if no TDEE). */
+function recalcMacros(p: KitchenProfile): MacroGrams {
+  const tdee = calcTDEE(p);
+  if (!tdee) return p.macros;
+  return calsToMacros(goalAdjustedCalories(tdee, p.goal), p.goal);
 }
 
 // ── Unit display helpers ──────────────────────────────────────────
@@ -201,19 +192,18 @@ function Toggle({ active, onToggle, label, emoji }: { active: boolean; onToggle:
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────
+// ── Default profile ───────────────────────────────────────────────
+
+const BODY_STAT_KEYS: (keyof KitchenProfile)[] = ["heightCm", "weightKg", "age", "sex", "activityLevel"];
 
 const DEFAULT_PROFILE: KitchenProfile = {
-  // Body stats — sensible defaults the user should personalise
   heightCm: 170,
   weightKg: 75,
   age: 30,
   sex: "male",
   activityLevel: "moderate",
   units: "metric",
-  // Nutrition — eat-healthy preset: 1,465 kcal · ~488 kcal avg per meal
-  macros: { protein: 90, carbs: 175, fat: 45 },
-  // Meal prefs
+  macros: { protein: 90, carbs: 210, fat: 52 },  // maintain preset
   servings: 2,
   dietaryPrefs: [],
   allergies: [],
@@ -223,24 +213,79 @@ const DEFAULT_PROFILE: KitchenProfile = {
   cheatDayPrefs: ["burgers", "pizza"],
   budgetPerWeek: 150,
   cookTimeMax: 45,
-  goal: "eat-healthy",
+  goal: "maintain",
 };
 
+/** Normalise legacy goal values from localStorage. */
+function normaliseGoal(g: unknown): KitchenProfile["goal"] {
+  if (g === "lose-weight" || g === "maintain" || g === "build-muscle") return g;
+  return "maintain"; // map "eat-healthy", "custom", or anything else → maintain
+}
+
+// ── Main page ─────────────────────────────────────────────────────
+
 export default function KitchenPage() {
+  const router = useRouter();
+
   const [profile, setProfile] = useState<KitchenProfile>(DEFAULT_PROFILE);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Navigation-guard state
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [pendingHref,    setPendingHref]    = useState<string | null>(null);
+  const isDirtyRef = useRef(false);
+  isDirtyRef.current = isDirty; // keep ref in sync for synchronous access in event handlers
 
   // Load persisted profile on mount
   useEffect(() => {
     const stored = loadKitchenProfile();
     if (stored) {
-      setProfile((p) => ({ ...p, ...(stored as Partial<KitchenProfile>) }));
+      const g = normaliseGoal((stored as Record<string, unknown>).goal);
+      setProfile((p) => ({ ...p, ...(stored as Partial<KitchenProfile>), goal: g }));
     }
   }, []);
 
+  // Navigation guard — intercept anchor clicks when there are unsaved changes
+  const handleClickCapture = useCallback((e: MouseEvent) => {
+    if (!isDirtyRef.current) return;
+    const anchor = (e.target as Element).closest("a[href]");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#") || href.startsWith("mailto:")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPendingHref(href);
+    setShowLeaveModal(true);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleClickCapture, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleClickCapture, true);
+    };
+  }, [handleClickCapture]);
+
+  // ── Profile mutation helpers ──────────────────────────────────────
+
   function set<K extends keyof KitchenProfile>(key: K, value: KitchenProfile[K]) {
-    setProfile((p) => ({ ...p, [key]: value }));
+    setProfile((p) => {
+      const updated = { ...p, [key]: value } as KitchenProfile;
+      // Auto-recalculate macros whenever a body stat changes
+      if (BODY_STAT_KEYS.includes(key)) {
+        updated.macros = recalcMacros(updated);
+      }
+      return updated;
+    });
     setSaved(false);
+    setIsDirty(true);
   }
 
   function toggleList(key: "dietaryPrefs" | "allergies" | "cuisinePrefs" | "cheatDayPrefs", id: string) {
@@ -250,21 +295,23 @@ export default function KitchenPage() {
       return { ...p, [key]: next };
     });
     setSaved(false);
+    setIsDirty(true);
   }
 
   function selectGoal(goal: KitchenProfile["goal"]) {
-    const tdee = calcTDEE(profile);
-    if (tdee && goal !== "custom") {
-      // Auto-set macros from TDEE when body stats are available
-      const targetCals = goalAdjustedCalories(tdee, goal);
-      const macros = calsToMacros(targetCals, goal);
-      setProfile((p) => ({ ...p, goal, macros }));
-    } else {
-      // Fall back to static gram presets
-      const defaults = GOAL_DEFAULTS[goal] ?? {};
-      setProfile((p) => ({ ...p, goal, ...defaults }));
-    }
+    setProfile((p) => {
+      const updated = { ...p, goal } as KitchenProfile;
+      const tdee = calcTDEE(updated);
+      if (tdee) {
+        updated.macros = calsToMacros(goalAdjustedCalories(tdee, goal), goal);
+      } else {
+        const defaults = GOAL_DEFAULTS[goal] ?? {};
+        if (defaults.macros) updated.macros = defaults.macros;
+      }
+      return updated;
+    });
     setSaved(false);
+    setIsDirty(true);
   }
 
   function applyTDEEToMacros() {
@@ -275,7 +322,6 @@ export default function KitchenPage() {
     set("macros", macros);
   }
 
-  /** Scale all macros proportionally so total calories hit `newCals`. */
   function scaleToCalories(newCals: number) {
     const current = derivedCals || 1;
     const ratio = newCals / current;
@@ -286,7 +332,12 @@ export default function KitchenPage() {
     });
   }
 
-  /** Estimate lbs/week change from a calorie delta vs TDEE. */
+  function handleSave() {
+    saveKitchenProfile(profile);
+    setSaved(true);
+    setIsDirty(false);
+  }
+
   function weightChangeLabel(delta: number): string {
     const lbsPerWeek = Math.abs(delta * 7) / 3500;
     const dir = delta < 0 ? "loss" : "gain";
@@ -294,11 +345,28 @@ export default function KitchenPage() {
     return `~${lbsPerWeek.toFixed(1)} lbs/week ${dir}`;
   }
 
-  // ── Derived display values ────────────────────────────────────────
-  const tdee      = calcTDEE(profile);
-  const goalCals  = tdee ? goalAdjustedCalories(tdee, profile.goal) : null;
-  const goalCalDelta = tdee && goalCals ? goalCals - tdee : 0;
+  // ── Leave modal handlers ──────────────────────────────────────────
 
+  function handleSaveAndLeave() {
+    saveKitchenProfile(profile);
+    setSaved(true);
+    isDirtyRef.current = false;
+    setIsDirty(false);
+    setShowLeaveModal(false);
+    if (pendingHref) router.push(pendingHref);
+  }
+
+  function handleLeaveWithoutSaving() {
+    isDirtyRef.current = false;
+    setIsDirty(false);
+    setShowLeaveModal(false);
+    if (pendingHref) router.push(pendingHref);
+  }
+
+  // ── Derived display values ────────────────────────────────────────
+
+  const tdee           = calcTDEE(profile);
+  const goalCals       = tdee ? goalAdjustedCalories(tdee, profile.goal) : null;
   const derivedCals    = derivedCalories(profile.macros);
   const proCals        = profile.macros.protein * 4;
   const carbCals       = profile.macros.carbs   * 4;
@@ -307,6 +375,44 @@ export default function KitchenPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
+
+      {/* ── Leave confirmation modal ── */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl">
+            <div className="flex items-start gap-3 mb-4">
+              <span className="text-2xl shrink-0">⚠️</span>
+              <div>
+                <p className="font-semibold text-foreground text-base">Unsaved changes</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  You have changes that haven&apos;t been saved. What would you like to do?
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleSaveAndLeave}
+                className={cn(buttonVariants(), "justify-center bg-primary hover:bg-primary/90")}
+              >
+                Save and leave
+              </button>
+              <button
+                onClick={handleLeaveWithoutSaving}
+                className={cn(buttonVariants({ variant: "outline" }), "justify-center")}
+              >
+                Leave without saving
+              </button>
+              <button
+                onClick={() => setShowLeaveModal(false)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                Stay on this page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-start justify-between gap-4">
@@ -319,16 +425,21 @@ export default function KitchenPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => { saveKitchenProfile(profile); setSaved(true); }}
-            className={cn(
-              buttonVariants({ size: "sm" }),
-              "shrink-0 transition-colors",
-              saved ? "bg-green-600 hover:bg-green-600/90" : "bg-primary hover:bg-primary/90"
+          <div className="flex items-center gap-3 shrink-0">
+            {isDirty && !saved && (
+              <span className="text-xs text-muted-foreground hidden sm:block">Unsaved changes</span>
             )}
-          >
-            {saved ? "✓ Saved" : "Save"}
-          </button>
+            <button
+              onClick={handleSave}
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "transition-colors",
+                saved ? "bg-green-600 hover:bg-green-600/90" : "bg-primary hover:bg-primary/90"
+              )}
+            >
+              {saved ? "✓ Saved" : "Save"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -466,8 +577,8 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Goal ── */}
-        <Section title="What's your goal?" subtitle="Selects a macro split — auto-calculated from your stats when available.">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Section title="What's your goal?" subtitle="Sets your macro split — auto-calculated from your stats above.">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {GOAL_OPTIONS.map((g) => (
               <button
                 key={g.id}
@@ -493,16 +604,16 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Nutrition targets ── */}
-        <Section title="Nutrition Targets" subtitle="Set your daily calorie target — macros adjust automatically, or fine-tune below.">
+        <Section title="Nutrition Targets" subtitle="Targets update automatically as you adjust your stats and goal — fine-tune below if needed.">
           <div className="space-y-5">
 
-            {/* ── 1. Calorie target — primary control ── */}
+            {/* ── 1. Calorie target ── */}
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Daily calorie target</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Drag to set · macros scale proportionally
+                    Drag to override · macros scale proportionally
                   </p>
                 </div>
                 <span className="text-3xl font-bold text-primary tabular-nums">
@@ -525,36 +636,34 @@ export default function KitchenPage() {
                 <span className="text-right">3,000<br/><span className="text-[9px]">Athlete</span></span>
               </div>
 
-              {/* Safety warning */}
               {derivedCals < 1200 && (
                 <p className="text-xs text-destructive font-medium">
                   ⚠️ Below 1,200 kcal is not recommended without medical supervision.
                 </p>
               )}
 
-              {/* TDEE comparison */}
               {tdee && (
                 <div className="flex items-center justify-between rounded-lg bg-background/60 border border-primary/10 px-3 py-2 text-xs">
                   <span className="text-muted-foreground">
                     Your TDEE: <span className="font-semibold text-foreground">{tdee.toLocaleString()} kcal</span>
+                    {goalCals && goalCals !== tdee && (
+                      <span className="ml-2 text-muted-foreground">
+                        · Goal target: <span className="font-semibold text-foreground">{goalCals.toLocaleString()} kcal</span>
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "font-semibold",
-                      derivedCals < tdee ? "text-primary" : "text-accent"
-                    )}>
+                    <span className={cn("font-semibold", derivedCals < tdee ? "text-primary" : "text-accent")}>
                       {derivedCals < tdee
                         ? `−${(tdee - derivedCals).toLocaleString()} kcal`
                         : `+${(derivedCals - tdee).toLocaleString()} kcal`}
                     </span>
-                    <span className="text-muted-foreground">
-                      · {weightChangeLabel(derivedCals - tdee)}
-                    </span>
+                    <span className="text-muted-foreground">· {weightChangeLabel(derivedCals - tdee)}</span>
                     <button
                       onClick={applyTDEEToMacros}
                       className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-6 text-[10px] px-2")}
                     >
-                      Use TDEE
+                      Reset to goal
                     </button>
                   </div>
                 </div>
@@ -564,12 +673,8 @@ export default function KitchenPage() {
             {/* ── 2. Per-meal targets ── */}
             <div>
               <div className="flex items-baseline justify-between mb-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Per-meal targets
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  25 / 35 / 40% split — breakfast naturally runs lighter
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Per-meal targets</p>
+                <p className="text-[10px] text-muted-foreground">25 / 35 / 40% split</p>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
@@ -586,15 +691,15 @@ export default function KitchenPage() {
                     <p className="text-[10px] text-muted-foreground">kcal</p>
                     <div className="mt-1.5 pt-1.5 border-t border-border/50 grid grid-cols-3 gap-0.5 text-[9px] text-muted-foreground">
                       <span>{Math.round(profile.macros.protein * share)}g P</span>
-                      <span>{Math.round(profile.macros.carbs * share)}g C</span>
-                      <span>{Math.round(profile.macros.fat * share)}g F</span>
+                      <span>{Math.round(profile.macros.carbs   * share)}g C</span>
+                      <span>{Math.round(profile.macros.fat     * share)}g F</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* ── 3. Macro breakdown (fine-tune) ── */}
+            {/* ── 3. Macro fine-tune ── */}
             <div>
               <p className="text-sm font-medium text-foreground mb-3">Fine-tune macros</p>
               <div className="space-y-4">
@@ -607,9 +712,7 @@ export default function KitchenPage() {
                       Protein
                     </label>
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {Math.round((proCals / totalMacroCals) * 100)}% of calories
-                      </span>
+                      <span className="text-muted-foreground">{Math.round((proCals / totalMacroCals) * 100)}% of calories</span>
                       <span className="font-semibold text-foreground">{profile.macros.protein} g</span>
                       <span className="text-muted-foreground">({proCals} kcal)</span>
                     </div>
@@ -634,9 +737,7 @@ export default function KitchenPage() {
                       Carbohydrates
                     </label>
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {Math.round((carbCals / totalMacroCals) * 100)}% of calories
-                      </span>
+                      <span className="text-muted-foreground">{Math.round((carbCals / totalMacroCals) * 100)}% of calories</span>
                       <span className="font-semibold text-foreground">{profile.macros.carbs} g</span>
                       <span className="text-muted-foreground">({carbCals} kcal)</span>
                     </div>
@@ -660,9 +761,7 @@ export default function KitchenPage() {
                       Fat
                     </label>
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">
-                        {Math.round((fatCals / totalMacroCals) * 100)}% of calories
-                      </span>
+                      <span className="text-muted-foreground">{Math.round((fatCals / totalMacroCals) * 100)}% of calories</span>
                       <span className="font-semibold text-foreground">{profile.macros.fat} g</span>
                       <span className="text-muted-foreground">({fatCals} kcal)</span>
                     </div>
@@ -677,14 +776,15 @@ export default function KitchenPage() {
                     Dietary guidelines: 20–35% of total calories · min. 44 g/day for hormones
                   </p>
                 </div>
+
               </div>
 
               {/* Calorie-share bar */}
               <div className="mt-4">
                 <div className="flex rounded-full overflow-hidden h-3">
-                  <div className="bg-primary transition-all"             style={{ width: `${(proCals  / totalMacroCals) * 100}%` }} />
-                  <div className="bg-accent transition-all"              style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
-                  <div className="bg-yellow-400/70 transition-all"       style={{ width: `${(fatCals  / totalMacroCals) * 100}%` }} />
+                  <div className="bg-primary transition-all"       style={{ width: `${(proCals  / totalMacroCals) * 100}%` }} />
+                  <div className="bg-accent transition-all"        style={{ width: `${(carbCals / totalMacroCals) * 100}%` }} />
+                  <div className="bg-yellow-400/70 transition-all" style={{ width: `${(fatCals  / totalMacroCals) * 100}%` }} />
                 </div>
                 <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
@@ -700,11 +800,9 @@ export default function KitchenPage() {
                     Fat {Math.round((fatCals / totalMacroCals) * 100)}%
                   </span>
                 </div>
-                {Math.round((proCals / totalMacroCals) * 100)
-                  + Math.round((carbCals / totalMacroCals) * 100)
-                  + Math.round((fatCals / totalMacroCals) * 100) !== 100 && null}
               </div>
             </div>
+
           </div>
         </Section>
 
@@ -872,20 +970,18 @@ export default function KitchenPage() {
           </div>
         </Section>
 
-        {/* Save */}
+        {/* ── Save footer ── */}
         <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-5">
           <div>
             <p className="font-semibold text-foreground">Ready to generate your plan?</p>
             <p className="text-sm text-muted-foreground">Save your profile, then let AI build your week.</p>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => { saveKitchenProfile(profile); setSaved(true); }}
-              className={cn(buttonVariants(), "bg-primary hover:bg-primary/90")}
-            >
-              {saved ? "✓ Saved" : "Save profile"}
-            </button>
-          </div>
+          <button
+            onClick={handleSave}
+            className={cn(buttonVariants(), "bg-primary hover:bg-primary/90")}
+          >
+            {saved ? "✓ Saved" : "Save profile"}
+          </button>
         </div>
 
       </div>
