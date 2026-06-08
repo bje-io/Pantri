@@ -67,15 +67,20 @@ type PickerTarget = {
 function RecipePreviewModal({
   recipe,
   isRegenerating,
+  slotServings,
   onClose,
   onSwap,
   onRandom,
+  onServingsChange,
 }: {
   recipe: Recipe;
   isRegenerating: boolean;
+  /** Current slot-level serving override (may differ from recipe.servings) */
+  slotServings: number;
   onClose: () => void;
   onSwap: () => void;
   onRandom: () => void;
+  onServingsChange: (n: number) => void;
 }) {
   const total = recipe.macros.protein + recipe.macros.carbs + recipe.macros.fat;
   const totalTime = recipe.prepTime + recipe.cookTime;
@@ -96,11 +101,11 @@ function RecipePreviewModal({
               <h2 className="font-serif text-xl font-bold text-foreground leading-tight">
                 {recipe.title}
               </h2>
+              {/* Metadata row — cuisine, time, calories */}
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-muted-foreground">
                 <span>{recipe.cuisine}</span>
                 {totalTime > 0 && <span>· ⏱️ {totalTime}m</span>}
-                <span>· 👥 {recipe.servings} servings</span>
-                <span>· 🔥 {recipe.macros.calories} cal</span>
+                <span>· 🔥 {recipe.macros.calories} cal/serving</span>
               </div>
               <div className="flex gap-1.5 mt-2 flex-wrap">
                 {recipe.source === "ai" && (
@@ -124,6 +129,33 @@ function RecipePreviewModal({
             >
               ✕
             </button>
+          </div>
+
+          {/* Servings stepper */}
+          <div className="flex items-center justify-between mt-3 py-2.5 px-3 rounded-xl bg-muted/40 border border-border/60">
+            <div>
+              <p className="text-xs font-semibold text-foreground">Servings for this slot</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Affects grocery list quantities
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onServingsChange(Math.max(1, slotServings - 1))}
+                className="w-7 h-7 rounded-lg border border-border bg-background hover:bg-muted hover:border-primary/40 flex items-center justify-center text-sm font-bold text-foreground transition-all"
+              >
+                −
+              </button>
+              <span className="w-8 text-center text-base font-bold text-foreground">
+                {slotServings}
+              </span>
+              <button
+                onClick={() => onServingsChange(Math.min(20, slotServings + 1))}
+                className="w-7 h-7 rounded-lg border border-border bg-background hover:bg-muted hover:border-primary/40 flex items-center justify-center text-sm font-bold text-foreground transition-all"
+              >
+                +
+              </button>
+            </div>
           </div>
 
           {total > 0 && (
@@ -211,6 +243,18 @@ function RecipePreviewModal({
             )}
           >
             ↔ Swap recipe
+          </button>
+          <button
+            onClick={() => { window.open(`/recipes/${recipe.id}`, "_blank"); }}
+            title="Open full recipe in new tab"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "px-3"
+            )}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -495,18 +539,18 @@ function MealSlotCard({
 }) {
   if (!recipe) {
     return (
-      <div className="relative w-full min-h-[130px]">
+      <div className="relative w-full min-h-[200px]">
         <button
           onClick={onOpen}
-          className="w-full h-full min-h-[130px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground border-border hover:border-primary/40 hover:bg-primary/5 group"
+          className="w-full h-full min-h-[200px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all text-muted-foreground hover:text-foreground border-border hover:border-primary/40 hover:bg-primary/5 group"
         >
-          <span className="text-xl transition-transform group-hover:scale-110">+</span>
-          <span className="text-[10px] font-medium">Add meal</span>
+          <span className="text-2xl transition-transform group-hover:scale-110">+</span>
+          <span className="text-xs font-medium">Add meal</span>
         </button>
         <button
           onClick={onRandom}
           title="Surprise me — random recipe"
-          className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 flex items-center justify-center text-[11px] transition-all"
+          className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 flex items-center justify-center text-sm transition-all"
         >
           🎲
         </button>
@@ -515,38 +559,40 @@ function MealSlotCard({
   }
 
   return (
-    <div className="relative group w-full min-h-[130px]">
+    <div className="relative group w-full min-h-[200px]">
       <button
         onClick={() => onPreview(recipe)}
         className={cn(
-          "w-full rounded-xl border p-3 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[130px] flex flex-col",
+          "w-full rounded-xl border p-3 text-left relative overflow-hidden transition-all hover:shadow-sm min-h-[200px] flex flex-col gap-2",
           recipe.isCheatDay
             ? "border-accent/40 bg-accent/5 hover:border-accent/70"
             : "border-border bg-card hover:border-primary/30"
         )}
       >
-        {/* Title row */}
-        <div className={cn("pr-14", recipe.isCheatDay && "pt-5")}>
-          {recipe.isCheatDay && (
-            <span className="absolute top-2 left-2 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
-              🍕 CHEAT
-            </span>
-          )}
-          <p className="text-xs font-semibold text-foreground leading-tight line-clamp-2">
+        {/* Cheat badge */}
+        {recipe.isCheatDay && (
+          <span className="absolute top-2 left-2 text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
+            🍕 CHEAT
+          </span>
+        )}
+
+        {/* Title block */}
+        <div className={cn("pr-2", recipe.isCheatDay && "pt-5")}>
+          <p className="text-xs font-semibold text-foreground leading-snug line-clamp-3">
             {recipe.title}
           </p>
           <p className="text-[10px] text-muted-foreground mt-0.5">{recipe.cuisine}</p>
         </div>
 
         {/* Macro grid — per serving */}
-        <div className="grid grid-cols-4 gap-1 mt-auto pt-2.5">
+        <div className="grid grid-cols-2 gap-1 mt-auto">
           {[
             { label: "cal",  val: recipe.macros.calories },
             { label: "pro",  val: `${recipe.macros.protein}g` },
             { label: "carb", val: `${recipe.macros.carbs}g` },
             { label: "fat",  val: `${recipe.macros.fat}g` },
           ].map((m) => (
-            <div key={m.label} className="text-center rounded-lg bg-muted/50 py-1">
+            <div key={m.label} className="text-center rounded-lg bg-muted/50 py-1.5">
               <p className="text-[11px] font-bold text-foreground leading-none">{m.val}</p>
               <p className="text-[9px] text-muted-foreground mt-0.5">{m.label}</p>
             </div>
@@ -554,24 +600,27 @@ function MealSlotCard({
         </div>
 
         {/* Servings control */}
-        <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-border/40">
-          <span className="text-[9px] text-muted-foreground">servings</span>
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="flex items-center justify-between pt-2 border-t border-border/40"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-[10px] text-muted-foreground font-medium">servings</span>
+          <div className="flex items-center gap-1.5">
             <button
               onClick={(e) => { e.stopPropagation(); onServingsChange(Math.max(1, servings - 1)); }}
-              className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all text-[11px] leading-none"
+              className="w-5 h-5 rounded border border-border bg-muted/50 hover:bg-muted flex items-center justify-center text-xs font-bold text-foreground transition-all"
             >−</button>
-            <span className="text-[10px] font-bold text-foreground w-4 text-center">{servings}</span>
+            <span className="text-xs font-bold text-foreground w-5 text-center">{servings}</span>
             <button
-              onClick={(e) => { e.stopPropagation(); onServingsChange(Math.min(12, servings + 1)); }}
-              className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all text-[11px] leading-none"
+              onClick={(e) => { e.stopPropagation(); onServingsChange(Math.min(20, servings + 1)); }}
+              className="w-5 h-5 rounded border border-border bg-muted/50 hover:bg-muted flex items-center justify-center text-xs font-bold text-foreground transition-all"
             >+</button>
           </div>
         </div>
       </button>
 
       {/* Hover actions — top right */}
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <button
           onClick={(e) => { e.stopPropagation(); onRandom(); }}
           title="Random healthy meal"
@@ -594,16 +643,6 @@ function MealSlotCard({
           ↔
         </button>
       </div>
-
-      {/* Pop-out button — hover only */}
-      <button
-        onClick={(e) => { e.stopPropagation(); window.open(`/recipes/${recipe.id}`, "_blank"); }}
-        title="Open full recipe in new tab"
-        className="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-md bg-background/95 border border-border hover:border-primary/50 hover:bg-primary/5 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground hover:text-primary shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-        Open
-      </button>
     </div>
   );
 }
@@ -1385,7 +1424,7 @@ export default function PlannerPage() {
                   const effectiveServings = effectiveSlot.servings ?? defaultServings;
                   const isTodayCol = weekOffset === 0 && new Date().getDay() === di;
                   return (
-                    <div key={day.day} className={cn("min-h-[130px] rounded-xl", isTodayCol && "bg-primary/[0.04]")}>
+                    <div key={day.day} className={cn("min-h-[200px] rounded-xl", isTodayCol && "bg-primary/[0.04]")}>
                       <MealSlotCard
                         recipe={effectiveRecipe}
                         servings={effectiveServings}
@@ -1532,6 +1571,10 @@ export default function PlannerPage() {
         <RecipePreviewModal
           recipe={previewRecipe}
           isRegenerating={false}
+          slotServings={
+            plan.days[previewTarget.dayIndex].meals[previewTarget.mealType].servings ??
+            defaultServings
+          }
           onClose={closePreview}
           onSwap={() => {
             closePreview();
@@ -1541,6 +1584,9 @@ export default function PlannerPage() {
             assignRandomRecipe(previewTarget.dayIndex, previewTarget.mealType);
             closePreview();
           }}
+          onServingsChange={(n) =>
+            updateSlotServings(previewTarget.dayIndex, previewTarget.mealType, n)
+          }
         />
       )}
 
