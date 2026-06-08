@@ -599,11 +599,23 @@ export default function PlannerPage() {
     buildDefaultWeekPlan(getWeekStartISO(0))
   );
 
-  // Load correct week from localStorage after mount / when week changes
-  // No save-on-change effect — we save explicitly via updatePlan()
+  // Load correct week from localStorage after mount / when week changes.
+  // Also restores the sameForAll toggles saved for that specific week,
+  // so switching weeks always shows the right per-week toggle state.
   useEffect(() => {
     const stored = loadWeekPlan(weekStart);
     setPlan(stored ?? buildDefaultWeekPlan(weekStart));
+
+    try {
+      const savedSFA = localStorage.getItem(`pantri-sameforall-${weekStart}`);
+      setSameForAll(
+        savedSFA
+          ? (JSON.parse(savedSFA) as Record<MealType, boolean>)
+          : { breakfast: false, lunch: false, dinner: false }
+      );
+    } catch {
+      setSameForAll({ breakfast: false, lunch: false, dinner: false });
+    }
   }, [weekStart]);
 
   // ── Helper: update state + save to localStorage atomically ──────
@@ -811,7 +823,12 @@ export default function PlannerPage() {
 
   function toggleSameForAll(mealType: MealType) {
     const turningOn = !sameForAll[mealType];
-    setSameForAll((prev) => ({ ...prev, [mealType]: !prev[mealType] }));
+    const next = { ...sameForAll, [mealType]: turningOn };
+    setSameForAll(next);
+    // Persist per-week so switching weeks restores each week's own toggle state
+    try {
+      localStorage.setItem(`pantri-sameforall-${weekStart}`, JSON.stringify(next));
+    } catch {}
     // When enabling, immediately open the picker so the user can choose
     // which recipe to use for all 7 days in one step.
     if (turningOn) {
