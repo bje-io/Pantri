@@ -57,6 +57,8 @@ const MEAL_ICONS: Record<string, string> = {
 
 export default function GeneratePage() {
   const [mode, setMode] = useState<GenerateMode>("single");
+  // Meal type for single-recipe mode — determines calorie share, cook time, food conventions
+  const [mealType, setMealType] = useState<MealType>("dinner");
   const [prompt, setPrompt] = useState("");
   const [calories, setCalories] = useState("");
   const [cookTime, setCookTime] = useState("");
@@ -117,7 +119,10 @@ export default function GeneratePage() {
   // Derived display values from kitchen profile
   const profileMacros  = kitchenProfile?.macros as { protein: number; carbs: number; fat: number } | undefined;
   const totalDailyCals = profileMacros ? derivedCalories(profileMacros) : null;
-  const perMealCals    = totalDailyCals ? Math.round(totalDailyCals / 3) : null;
+  // Per-meal calorie target adjusts to the meal type share (breakfast 25%, lunch 35%, dinner 40%)
+  const MEAL_SHARES: Record<MealType, number> = { breakfast: 0.25, lunch: 0.35, dinner: 0.40 };
+  const activeMealShare = mode === "single" ? (MEAL_SHARES[mealType] ?? 1 / 3) : 1 / 3;
+  const perMealCals    = totalDailyCals ? Math.round(totalDailyCals * activeMealShare) : null;
   const dietaryPrefs   = (kitchenProfile?.dietaryPrefs as string[] | undefined) ?? [];
   const allergies      = (kitchenProfile?.allergies    as string[] | undefined) ?? [];
 
@@ -133,7 +138,15 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, prompt, calories, cookTime, servings, kitchenProfile: useKitchen ? kitchenProfile : null }),
+        body: JSON.stringify({
+          mode,
+          prompt,
+          calories,
+          cookTime,
+          servings,
+          kitchenProfile: useKitchen ? kitchenProfile : null,
+          mealType: mode === "single" ? mealType : undefined,
+        }),
       });
 
       const data = await res.json();
@@ -151,7 +164,7 @@ export default function GeneratePage() {
           id: `sage-${Date.now()}`,
           title: r.name,
           cuisine: r.cuisine,
-          mealType: [],
+          mealType: [mealType], // use the selected meal type
           cookTime: r.cookTime,
           prepTime: 0,
           servings: r.servings,
@@ -678,19 +691,22 @@ export default function GeneratePage() {
                 <div className="flex flex-wrap gap-1.5">
                   {perMealCals && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-background border border-border text-xs font-medium text-foreground">
-                      🔥 ~{perMealCals} cal/meal
+                      🔥 ~{perMealCals} cal
+                      {mode === "single"
+                        ? ` (${mealType})`
+                        : "/meal"}
                     </span>
                   )}
                   {profileMacros && (
                     <>
                       <span className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
-                        P {Math.round(profileMacros.protein / 3)}g
+                        P {Math.round(profileMacros.protein * activeMealShare)}g
                       </span>
                       <span className="px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20 text-xs font-medium text-accent">
-                        C {Math.round(profileMacros.carbs / 3)}g
+                        C {Math.round(profileMacros.carbs * activeMealShare)}g
                       </span>
                       <span className="px-2.5 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-xs font-medium text-yellow-700 dark:text-yellow-400">
-                        F {Math.round(profileMacros.fat / 3)}g
+                        F {Math.round(profileMacros.fat * activeMealShare)}g
                       </span>
                     </>
                   )}
@@ -720,7 +736,7 @@ export default function GeneratePage() {
           )}
 
           {/* Mode toggle */}
-          <div className="flex rounded-xl border border-border bg-muted/30 p-1 mb-6 w-fit">
+          <div className="flex rounded-xl border border-border bg-muted/30 p-1 mb-4 w-fit">
             {(["single", "week"] as const).map((m) => (
               <button
                 key={m}
@@ -734,6 +750,46 @@ export default function GeneratePage() {
               </button>
             ))}
           </div>
+
+          {/* Meal type picker — single mode only */}
+          {mode === "single" && (
+            <div className="mb-6">
+              <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                Meal type
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {(
+                  [
+                    { type: "breakfast" as const, emoji: "🌅", label: "Breakfast", sub: "25% of daily cal · quick prep" },
+                    { type: "lunch"     as const, emoji: "☀️", label: "Lunch",     sub: "35% of daily cal · midday fuel" },
+                    { type: "dinner"    as const, emoji: "🌙", label: "Dinner",    sub: "40% of daily cal · hearty meal" },
+                  ] as const
+                ).map(({ type, emoji, label, sub }) => (
+                  <button
+                    key={type}
+                    onClick={() => setMealType(type)}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-xl border px-4 py-3 text-left transition-all",
+                      mealType === type
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                        : "border-border bg-card hover:border-primary/40 hover:bg-primary/5"
+                    )}
+                  >
+                    <span className="text-xl shrink-0">{emoji}</span>
+                    <div>
+                      <p className={cn("text-sm font-semibold leading-none", mealType === type ? "text-primary" : "text-foreground")}>
+                        {label}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>
+                    </div>
+                    {mealType === type && (
+                      <span className="ml-auto shrink-0 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-[9px] text-primary-foreground font-bold">✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Prompt input */}
           <div className="rounded-2xl border border-border bg-card p-6 mb-6">

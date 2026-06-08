@@ -15,29 +15,45 @@ type KitchenProfileData = {
   servings?: number;
 };
 
-function buildKitchenContext(profile: KitchenProfileData | null): string {
+function buildKitchenContext(
+  profile: KitchenProfileData | null,
+  mealType?: string
+): string {
   if (!profile) return "";
 
   const goalLabels: Record<string, string> = {
     "lose-weight":  "Lose Weight — calorie deficit, higher protein, smart carbs",
     maintain:       "Maintain weight — balanced macros, sustainable variety",
     "build-muscle": "Build Muscle — calorie surplus, high protein, nutrient-dense",
-    "eat-healthy":  "Eat Healthier — whole foods, less processed, balanced",
-    custom:         "Custom targets",
   };
+
+  // Meal-type calorie shares; default to even split when no type specified
+  const MEAL_SHARES: Record<string, number> = {
+    breakfast: 0.25,
+    lunch:     0.35,
+    dinner:    0.40,
+  };
+  const share = mealType ? (MEAL_SHARES[mealType] ?? 1 / 3) : 1 / 3;
 
   const macros = profile.macros;
   const derivedCals    = macros ? Math.round(macros.protein * 4 + macros.carbs * 4 + macros.fat * 9) : null;
-  const perMealCals    = derivedCals    ? Math.round(derivedCals    / 3) : null;
-  const perMealProtein = macros?.protein ? Math.round(macros.protein / 3) : null;
-  const perMealCarbs   = macros?.carbs   ? Math.round(macros.carbs   / 3) : null;
-  const perMealFat     = macros?.fat     ? Math.round(macros.fat     / 3) : null;
+  const perMealCals    = derivedCals    ? Math.round(derivedCals    * share) : null;
+  const perMealProtein = macros?.protein ? Math.round(macros.protein * share) : null;
+  const perMealCarbs   = macros?.carbs   ? Math.round(macros.carbs   * share) : null;
+  const perMealFat     = macros?.fat     ? Math.round(macros.fat     * share) : null;
 
   const lines: string[] = ["=== USER KITCHEN PROFILE — apply all constraints strictly ==="];
 
   if (profile.goal)    lines.push(`Goal: ${goalLabels[profile.goal] ?? profile.goal}`);
   if (derivedCals)     lines.push(`Daily calorie target: ${derivedCals} kcal`);
-  if (perMealCals)     lines.push(`Per-meal calorie target: ~${perMealCals} kcal (aim within ±10%)`);
+  if (perMealCals && mealType) {
+    lines.push(
+      `Per-meal calorie target for ${mealType}: ~${perMealCals} kcal ` +
+      `(${Math.round(share * 100)}% of daily total — aim within ±10%)`
+    );
+  } else if (perMealCals) {
+    lines.push(`Per-meal calorie target: ~${perMealCals} kcal (aim within ±10%)`);
+  }
   if (macros)          lines.push(`Daily macros: Protein ${macros.protein}g | Carbs ${macros.carbs}g | Fat ${macros.fat}g`);
   if (perMealProtein !== null) {
     lines.push(`Per-meal macros: Protein ~${perMealProtein}g | Carbs ~${perMealCarbs}g | Fat ~${perMealFat}g`);
@@ -63,6 +79,101 @@ function buildKitchenContext(profile: KitchenProfileData | null): string {
   return lines.join("\n");
 }
 
+// ── Meal-type semantic context ────────────────────────────────────
+//
+// Each meal type carries its own conventions around calories, cook time,
+// appropriate food categories, macro emphasis, and what to avoid.
+// This is injected into the single-recipe prompt so the model generates
+// something that genuinely fits the meal slot — not just a generic recipe
+// re-labelled as "breakfast."
+
+type MealTypeSpec = {
+  calorieShareNote: string;
+  cookTimeWindow: string;
+  appropriateFoods: string;
+  macroEmphasis: string;
+  avoid: string;
+};
+
+const MEAL_TYPE_SPECS: Record<string, MealTypeSpec> = {
+  breakfast: {
+    calorieShareNote:
+      "Breakfast is the lightest meal — typically 25% of daily calories. " +
+      "Keep it in the 300–500 kcal range unless the kitchen profile specifies otherwise.",
+    cookTimeWindow:
+      "5–20 minutes. Morning time is limited; the dish must be quick to prepare.",
+    appropriateFoods:
+      "Eggs (scrambled, poached, fried, omelette), oatmeal and porridge, " +
+      "yogurt and fruit parfaits, overnight oats, smoothie bowls, pancakes, " +
+      "waffles, avocado toast, breakfast burritos, granola, frittatas, " +
+      "breakfast sandwiches, chia puddings.",
+    macroEmphasis:
+      "Moderate protein (20–30g) for morning satiety; carb-forward to fuel the day; " +
+      "lighter on heavy saturated fats. Include fibre-rich ingredients where possible.",
+    avoid:
+      "Heavy stews, braises, roasts, red-meat-centric dishes, alcohol-based sauces, " +
+      "overly rich restaurant-style preparations, dishes that require extended marinating " +
+      "or slow cooking. Nothing that feels unnatural to eat at 7–9 AM.",
+  },
+  lunch: {
+    calorieShareNote:
+      "Lunch is the midday meal — typically 35% of daily calories. " +
+      "Aim for 400–600 kcal unless the kitchen profile specifies otherwise.",
+    cookTimeWindow:
+      "15–30 minutes. Lunch is often batch-cooked or assembled quickly.",
+    appropriateFoods:
+      "Grain bowls, Buddha bowls, salads with substantial protein, wraps, sandwiches, " +
+      "soups and chowders, stir-fries, bento-style plates, quesadillas, grain salads, " +
+      "frittata slices, noodle salads, hearty legume dishes.",
+    macroEmphasis:
+      "Balanced macros: enough protein (25–40g) to sustain afternoon focus, " +
+      "complex carbohydrates for steady energy, good fibre content. " +
+      "Moderate fat — satisfying but not heavy.",
+    avoid:
+      "Very heavy or rich dishes that would cause an afternoon energy crash, " +
+      "dishes that are difficult to portion or pack, anything that needs to be " +
+      "served immediately from the oven and doesn't hold well.",
+  },
+  dinner: {
+    calorieShareNote:
+      "Dinner is the most substantial meal — typically 40% of daily calories. " +
+      "Aim for 500–700 kcal unless the kitchen profile specifies otherwise.",
+    cookTimeWindow:
+      "25–50 minutes. The evening allows more time and attention in the kitchen.",
+    appropriateFoods:
+      "Protein centerpiece dishes (chicken, fish, beef, tofu) with vegetables and " +
+      "complex carbs, pasta dishes, curries, braises, sheet-pan meals, roasted dishes, " +
+      "stews, risottos, grain-and-protein combos, tacos and burritos, " +
+      "stir-fries, stuffed vegetables, salmon dishes.",
+    macroEmphasis:
+      "Higher protein (35–50g) to support overnight muscle recovery; " +
+      "complex carbohydrates for sustained satiety; moderate-to-higher fat for " +
+      "flavour and fullness. The dish should feel complete and deeply satisfying " +
+      "as the final meal of the day.",
+    avoid:
+      "Very light or snack-like preparations that don't satisfy as a main meal, " +
+      "dishes whose character is clearly breakfast or brunch. " +
+      "Avoid meals that are too calorie-sparse to close out the day.",
+  },
+};
+
+function buildMealTypeContext(mealType?: string): string {
+  if (!mealType) return "";
+  const spec = MEAL_TYPE_SPECS[mealType];
+  if (!spec) return "";
+
+  const label = mealType.charAt(0).toUpperCase() + mealType.slice(1);
+  return [
+    `=== MEAL TYPE: ${label.toUpperCase()} — follow these conventions strictly ===`,
+    `Calorie guidance: ${spec.calorieShareNote}`,
+    `Cook time: ${spec.cookTimeWindow}`,
+    `Appropriate foods and formats: ${spec.appropriateFoods}`,
+    `Macro emphasis: ${spec.macroEmphasis}`,
+    `Avoid: ${spec.avoid}`,
+    `=== END MEAL TYPE ===`,
+  ].join("\n");
+}
+
 // ── Route handler ─────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -70,17 +181,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "needs-key" }, { status: 500 });
   }
 
-  const { mode, prompt, calories, cookTime, servings, kitchenProfile } = await req.json();
+  const { mode, prompt, calories, cookTime, servings, kitchenProfile, mealType } = await req.json();
 
   if (!prompt?.trim()) {
     return NextResponse.json({ error: "Prompt required" }, { status: 400 });
   }
 
-  const kitchenContext = buildKitchenContext(kitchenProfile ?? null);
+  // Pass mealType into kitchen context so per-meal calorie targets use the right share
+  const kitchenContext  = buildKitchenContext(kitchenProfile ?? null, mealType ?? undefined);
+  const mealTypeContext = buildMealTypeContext(mealType ?? undefined);
 
   // Manual form overrides (these take precedence over profile defaults)
   const overrides = [
-    calories && `max ${calories} calories per meal`,
+    calories && `max ${calories} calories`,
     cookTime && `max ${cookTime} minutes cook time`,
     servings && `${servings} servings`,
   ]
@@ -99,7 +212,9 @@ export async function POST(req: NextRequest) {
 
 ${kitchenContext}
 
-USER REQUEST: "${prompt}"${overrides ? `\nUSER OVERRIDES (take precedence over profile): ${overrides}` : ""}
+${mealTypeContext}
+
+USER REQUEST: "${prompt}"${overrides ? `\nUSER OVERRIDES (take precedence over all): ${overrides}` : ""}
 
 Return ONLY a valid JSON object with this exact structure, no extra text:
 {
