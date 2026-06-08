@@ -33,6 +33,8 @@ export type Recipe = {
 export type MealSlot = {
   recipe: Recipe | null;
   isCheatDay?: boolean;
+  /** Override the recipe's default serving count for this specific slot */
+  servings?: number;
 };
 
 export type DayPlan = {

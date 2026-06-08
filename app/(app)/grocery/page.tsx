@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { loadWeekPlan, loadKitchenProfile } from "@/lib/local-store";
+import type { MealType, WeekPlan } from "@/lib/meal-data";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -18,12 +19,13 @@ type GroceryItem = {
   fromMeals: string[];
 };
 
-// ── Helpers ───────────────────────────────────────────────────────
+// ── Week helpers ──────────────────────────────────────────────────
 
-function shelfInfo(days: number): { label: string; color: string; tip: string } {
-  if (days <= 2) return { label: `${days}d`, color: "bg-destructive/10 text-destructive border-destructive/30", tip: "Use quickly — expires in 1–2 days" };
-  if (days <= 5) return { label: `${days}d`, color: "bg-accent/10 text-accent border-accent/30", tip: `Use within ${days} days of purchase` };
-  return { label: `${days}d`, color: "bg-primary/10 text-primary border-primary/20", tip: `Good for up to ${days} days` };
+function getWeekStartISO(offset = 0): string {
+  const d = new Date();
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - d.getDay() + offset * 7);
+  return sunday.toISOString().split("T")[0];
 }
 
 function getWeekLabel(offset: number): string {
@@ -35,53 +37,232 @@ function getWeekLabel(offset: number): string {
   return `${sunday.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }
 
-// ── Mock data for two weeks ───────────────────────────────────────
+// ── Ingredient categorisation ─────────────────────────────────────
 
-const WEEK_DATA: Record<number, GroceryItem[]> = {
-  0: [
-    // Produce
-    { id: "p1", name: "Salmon fillets", amount: "2 × 6 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Miso-Glazed Salmon"] },
-    { id: "p2", name: "Chicken thighs", amount: "12 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Chicken Tinga Tacos"] },
-    { id: "p3", name: "Ground turkey", amount: "12 oz", category: "Proteins", checked: true, perishable: true, shelfDays: 2, fromMeals: ["Greek Turkey Meatballs"] },
-    { id: "p4", name: "Large shrimp, peeled", amount: "12 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Shrimp Pad Thai"] },
-    { id: "p5", name: "Chicken breast", amount: "14 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Chicken Tikka Masala"] },
+const PROTEIN_KW   = ["chicken", "beef", "turkey", "pork", "salmon", "shrimp", "tuna", "fish", "steak", "lamb", "tofu", "tempeh", "mince", "ground", "fillet", "breast", "thigh", "sausage", "bacon", "ham", "duck", "tilapia", "cod", "crab", "lobster", "scallop", "prawn"];
+const PRODUCE_KW   = ["tomato", "lettuce", "spinach", "kale", "broccoli", "pepper", "onion", "garlic", "ginger", "carrot", "cucumber", "avocado", "cilantro", "parsley", "basil", "lemon", "lime", "apple", "banana", "berry", "berries", "scallion", "mushroom", "potato", "zucchini", "celery", "mango", "peach", "sprout", "cabbage", "cauliflower", "corn", "pea", "asparagus", "eggplant", "squash", "arugula", "romaine", "shallot", "leek", "radish", "beet", "fennel", "orange", "grape", "cherry", "plum", "herbs", "herb", "jalapeño", "jalapeno", "chili", "chilli", "bok choy"];
+const DAIRY_KW     = ["milk", "cream", "cheese", "yogurt", "butter", "egg", "eggs", "cheddar", "mozzarella", "parmesan", "feta", "ricotta", "brie", "gouda", "ghee", "sour cream", "whey"];
+const GRAIN_KW     = ["rice", "pasta", "noodle", "bread", "tortilla", "oat", "oats", "quinoa", "farro", "couscous", "flour", "wrap", "bagel", "pita", "cracker", "cereal", "barley", "lentil", "lentils", "chickpea", "chickpeas", "bean", "beans", "bulgur", "polenta", "ramen"];
 
-    { id: "v1", name: "Scallions", amount: "1 bunch", category: "Produce", checked: false, perishable: true, shelfDays: 7, fromMeals: ["Miso-Glazed Salmon", "Shrimp Pad Thai"] },
-    { id: "v2", name: "Avocado", amount: "2", category: "Produce", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Chicken Tinga Tacos"] },
-    { id: "v3", name: "Cherry tomatoes", amount: "2 cups", category: "Produce", checked: true, perishable: true, shelfDays: 5, fromMeals: ["Greek Turkey Meatballs", "Mediterranean Bowl"] },
-    { id: "v4", name: "Cucumber", amount: "1 large", category: "Produce", checked: false, perishable: true, shelfDays: 7, fromMeals: ["Greek Turkey Meatballs"] },
-    { id: "v5", name: "Cauliflower", amount: "1 head", category: "Produce", checked: false, perishable: true, shelfDays: 5, fromMeals: ["Chicken Tikka Masala"] },
-    { id: "v6", name: "Fresh cilantro", amount: "1 bunch", category: "Produce", checked: false, perishable: true, shelfDays: 4, fromMeals: ["Chicken Tinga Tacos", "Chicken Tikka Masala"] },
-    { id: "v7", name: "Bean sprouts", amount: "1 cup", category: "Produce", checked: false, perishable: true, shelfDays: 3, fromMeals: ["Shrimp Pad Thai"] },
-    { id: "v8", name: "Mixed berries", amount: "1 cup", category: "Produce", checked: false, perishable: true, shelfDays: 4, fromMeals: ["Yogurt Parfait"] },
-    { id: "v9", name: "Banana", amount: "3", category: "Produce", checked: false, perishable: true, shelfDays: 3, fromMeals: ["Overnight Oats"] },
+function categorizeIngredient(name: string): string {
+  const lower = name.toLowerCase();
+  if (PROTEIN_KW.some((k) => lower.includes(k))) return "Proteins";
+  if (DAIRY_KW.some((k) => lower.includes(k)))   return "Dairy & Eggs";
+  if (PRODUCE_KW.some((k) => lower.includes(k))) return "Produce";
+  if (GRAIN_KW.some((k) => lower.includes(k)))   return "Grains & Noodles";
+  return "Pantry";
+}
 
-    { id: "d1", name: "Greek yogurt, full fat", amount: "2 cups", category: "Dairy & Eggs", checked: false, perishable: true, shelfDays: 7, fromMeals: ["Yogurt Parfait", "Greek Turkey Meatballs", "Chicken Tikka Masala"] },
-    { id: "d2", name: "Eggs", amount: "6", category: "Dairy & Eggs", checked: false, perishable: true, shelfDays: 21, fromMeals: ["Avocado Toast", "Shrimp Pad Thai"] },
-    { id: "d3", name: "Heavy cream", amount: "½ cup", category: "Dairy & Eggs", checked: false, perishable: true, shelfDays: 5, fromMeals: ["Chicken Tikka Masala"] },
+function getShelfDays(name: string, category: string): number | undefined {
+  if (category === "Pantry" || category === "Grains & Noodles") return undefined;
+  const lower = name.toLowerCase();
+  if (category === "Proteins") return 2;
+  if (category === "Dairy & Eggs") {
+    if (lower.includes("egg"))    return 21;
+    if (lower.includes("butter") || lower.includes("cheese")) return 14;
+    return 7;
+  }
+  if (category === "Produce") {
+    if (lower.includes("avocado") || lower.includes("banana") || lower.includes("sprout")) return 3;
+    if (lower.includes("herb") || lower.includes("cilantro") || lower.includes("parsley") || lower.includes("basil")) return 4;
+    if (lower.includes("berry") || lower.includes("berries") || lower.includes("cherry")) return 3;
+    return 5;
+  }
+  return undefined;
+}
 
-    { id: "g1", name: "Jasmine rice", amount: "2 cups dry", category: "Grains & Noodles", checked: false, perishable: false, fromMeals: ["Miso-Glazed Salmon"] },
-    { id: "g2", name: "Flat rice noodles", amount: "8 oz", category: "Grains & Noodles", checked: false, perishable: false, fromMeals: ["Shrimp Pad Thai"] },
-    { id: "g3", name: "Corn tortillas (small)", amount: "6", category: "Grains & Noodles", checked: true, perishable: false, fromMeals: ["Chicken Tinga Tacos"] },
-    { id: "g4", name: "Rolled oats", amount: "1 cup", category: "Grains & Noodles", checked: false, perishable: false, fromMeals: ["Overnight Oats"] },
+// ── Amount scaling ────────────────────────────────────────────────
 
-    { id: "pa1", name: "White miso paste", amount: "2 tbsp", category: "Pantry", checked: false, perishable: false, fromMeals: ["Miso-Glazed Salmon"] },
-    { id: "pa2", name: "Fish sauce", amount: "3 tbsp", category: "Pantry", checked: false, perishable: false, fromMeals: ["Shrimp Pad Thai"] },
-    { id: "pa3", name: "Tamarind paste", amount: "2 tbsp", category: "Pantry", checked: false, perishable: false, fromMeals: ["Shrimp Pad Thai"] },
-    { id: "pa4", name: "Crushed tomatoes (can)", amount: "1 × 14 oz", category: "Pantry", checked: false, perishable: false, fromMeals: ["Chicken Tikka Masala"] },
-    { id: "pa5", name: "Chipotle peppers in adobo", amount: "1 can", category: "Pantry", checked: true, perishable: false, fromMeals: ["Chicken Tinga Tacos"] },
-  ],
-  1: [
-    { id: "n1", name: "Ground beef, 80/20", amount: "12 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 2, fromMeals: ["Smash Burger"] },
-    { id: "n2", name: "Farro or quinoa", amount: "1 cup dry", category: "Grains & Noodles", checked: false, perishable: false, fromMeals: ["Mediterranean Bowl"] },
-    { id: "n3", name: "Chickpeas (can)", amount: "1 × 14 oz", category: "Pantry", checked: false, perishable: false, fromMeals: ["Mediterranean Bowl"] },
-    { id: "n4", name: "Deli turkey breast", amount: "8 oz", category: "Proteins", checked: false, perishable: true, shelfDays: 4, fromMeals: ["Turkey Avocado Wrap"] },
-    { id: "n5", name: "Feta cheese", amount: "2 oz", category: "Dairy & Eggs", checked: false, perishable: true, shelfDays: 7, fromMeals: ["Mediterranean Bowl"] },
-    { id: "n6", name: "Red cabbage", amount: "1 small head", category: "Produce", checked: false, perishable: true, shelfDays: 7, fromMeals: ["Spicy Thai Noodle Salad"] },
-    { id: "n7", name: "Brioche buns", amount: "2", category: "Grains & Noodles", checked: false, perishable: true, shelfDays: 5, fromMeals: ["Smash Burger"] },
-    { id: "n8", name: "American cheese slices", amount: "4 slices", category: "Dairy & Eggs", checked: false, perishable: true, shelfDays: 14, fromMeals: ["Smash Burger"] },
-  ],
+const UNICODE_FRACS: Record<string, number> = {
+  "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3,
+  "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875,
 };
+
+function parseLeadingNum(str: string): { num: number; rest: string } | null {
+  let s = str.trim();
+  let num = 0;
+  let found = false;
+
+  // Leading unicode fraction (e.g. "½ cup")
+  for (const [ch, val] of Object.entries(UNICODE_FRACS)) {
+    if (s.startsWith(ch)) {
+      num = val;
+      s = s.slice(ch.length).trim();
+      found = true;
+      break;
+    }
+  }
+
+  // Leading integer or decimal (e.g. "2 tbsp" or "1.5 oz")
+  const m = s.match(/^(\d+(?:\.\d+)?)/);
+  if (m && !found) {
+    num = parseFloat(m[1]);
+    s = s.slice(m[1].length).trim();
+    // Trailing unicode fraction: "1 ½ cups"
+    for (const [ch, val] of Object.entries(UNICODE_FRACS)) {
+      if (s.startsWith(ch)) {
+        num += val;
+        s = s.slice(ch.length).trim();
+        break;
+      }
+    }
+    found = true;
+  } else if (m && found) {
+    // e.g. "½ ..." shouldn't hit here, but guard anyway
+  }
+
+  if (!found) return null;
+  return { num, rest: s };
+}
+
+function formatNum(n: number): string {
+  // Round to nearest ¼
+  const r = Math.round(n * 4) / 4;
+  const whole = Math.floor(r);
+  const frac = Math.round((r - whole) * 4);
+  const FRAC_CHAR: Record<number, string> = { 1: "¼", 2: "½", 3: "¾" };
+  if (frac === 0) return `${whole}`;
+  if (whole === 0) return FRAC_CHAR[frac];
+  return `${whole} ${FRAC_CHAR[frac]}`;
+}
+
+function scaleAmount(amount: string | undefined, factor: number): string {
+  if (!amount) return "";
+  if (Math.abs(factor - 1) < 0.001) return amount;
+  const parsed = parseLeadingNum(amount);
+  if (!parsed) return amount; // unparseable — return as-is
+  const scaled = parsed.num * factor;
+  return `${formatNum(scaled)}${parsed.rest ? " " + parsed.rest : ""}`.trim();
+}
+
+// ── Grocery generation ────────────────────────────────────────────
+
+const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
+
+function generateGroceryItems(weekStart: string, defaultServings: number): GroceryItem[] {
+  const plan = loadWeekPlan(weekStart);
+  if (!plan) return [];
+
+  // Load per-week sameForAll state (same key as planner uses)
+  let sameForAll: Record<MealType, boolean> = {
+    breakfast: false,
+    lunch: false,
+    dinner: false,
+  };
+  try {
+    const raw = localStorage.getItem(`pantri-sameforall-${weekStart}`);
+    if (raw) sameForAll = JSON.parse(raw) as Record<MealType, boolean>;
+  } catch {}
+
+  // Accumulate by normalised ingredient name
+  type AccEntry = {
+    displayName: string;
+    amounts: { num: number; unit: string }[];
+    rawAmounts: string[];
+    fromMeals: Set<string>;
+  };
+  const acc = new Map<string, AccEntry>();
+
+  function addIngredient(
+    itemName: string,
+    amount: string | undefined,
+    mealTitle: string,
+    scalingFactor: number
+  ) {
+    const key = itemName.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!acc.has(key)) {
+      acc.set(key, { displayName: itemName, amounts: [], rawAmounts: [], fromMeals: new Set() });
+    }
+    const entry = acc.get(key)!;
+    entry.fromMeals.add(mealTitle);
+
+    if (amount) {
+      const parsed = parseLeadingNum(amount);
+      if (parsed) {
+        const scaled = parsed.num * scalingFactor;
+        const unit = parsed.rest;
+        const existing = entry.amounts.find((a) => a.unit === unit);
+        if (existing) {
+          existing.num += scaled;
+        } else {
+          entry.amounts.push({ num: scaled, unit });
+        }
+      } else {
+        // Can't parse; note the raw amount with multiplier when > 1
+        const label =
+          scalingFactor > 1 && Math.round(scalingFactor) === scalingFactor
+            ? `${Math.round(scalingFactor)}× ${amount}`
+            : amount;
+        if (!entry.rawAmounts.includes(label)) entry.rawAmounts.push(label);
+      }
+    }
+  }
+
+  for (const mealType of MEAL_TYPES) {
+    if (sameForAll[mealType]) {
+      // Only day 0 stores the recipe; it repeats all 7 days
+      const slot = plan.days[0].meals[mealType];
+      if (!slot.recipe) continue;
+      const recipe = slot.recipe;
+      const slotServings = slot.servings ?? defaultServings;
+      // Weekly total = 7 days × slotServings, relative to recipe's serving size
+      const factor = recipe.servings > 0 ? (slotServings * 7) / recipe.servings : slotServings * 7;
+      for (const ing of recipe.ingredients) {
+        addIngredient(ing.item, ing.amount, recipe.title, factor);
+      }
+    } else {
+      for (const day of plan.days) {
+        const slot = day.meals[mealType];
+        if (!slot.recipe) continue;
+        const recipe = slot.recipe;
+        const slotServings = slot.servings ?? defaultServings;
+        const factor = recipe.servings > 0 ? slotServings / recipe.servings : slotServings;
+        for (const ing of recipe.ingredients) {
+          addIngredient(ing.item, ing.amount, recipe.title, factor);
+        }
+      }
+    }
+  }
+
+  // Build GroceryItem list
+  const items: GroceryItem[] = [];
+  for (const [key, entry] of acc) {
+    const category = categorizeIngredient(entry.displayName);
+    const shelfDays = getShelfDays(entry.displayName, category);
+
+    // Build combined amount string
+    const parts: string[] = entry.amounts
+      .filter((a) => a.num > 0)
+      .map((a) => `${formatNum(a.num)}${a.unit ? " " + a.unit : ""}`.trim());
+    parts.push(...entry.rawAmounts);
+    const amount = parts.join(", ");
+
+    items.push({
+      id: `gen-${weekStart}-${key.replace(/[^a-z0-9]/g, "-")}`,
+      name: entry.displayName,
+      amount,
+      category,
+      checked: false, // overridden by checkedIds in component
+      perishable: shelfDays !== undefined,
+      shelfDays,
+      fromMeals: Array.from(entry.fromMeals),
+    });
+  }
+
+  return items;
+}
+
+// ── Shelf badge ───────────────────────────────────────────────────
+
+function shelfInfo(days: number): { label: string; color: string; tip: string } {
+  if (days <= 2)
+    return { label: `${days}d`, color: "bg-destructive/10 text-destructive border-destructive/30", tip: "Use quickly — expires in 1–2 days" };
+  if (days <= 5)
+    return { label: `${days}d`, color: "bg-accent/10 text-accent border-accent/30", tip: `Use within ${days} days of purchase` };
+  return { label: `${days}d`, color: "bg-primary/10 text-primary border-primary/20", tip: `Good for up to ${days} days` };
+}
+
+// ── Constants ─────────────────────────────────────────────────────
 
 const CATEGORIES = ["All", "Produce", "Proteins", "Dairy & Eggs", "Grains & Noodles", "Pantry"];
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -96,13 +277,54 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 export default function GroceryPage() {
   const [weekOffset, setWeekOffset] = useState(0);
-  const [catFilter, setCatFilter] = useState("All");
-  const [items, setItems] = useState<Record<number, GroceryItem[]>>(WEEK_DATA);
-  const [newItem, setNewItem] = useState("");
-  const [showPerishableOnly, setShowPerishableOnly] = useState(false);
+  const weekStart = getWeekStartISO(weekOffset);
 
-  const weekItems = items[weekOffset] ?? [];
-  const filtered = weekItems.filter((item) => {
+  const [catFilter, setCatFilter] = useState("All");
+  const [showPerishableOnly, setShowPerishableOnly] = useState(false);
+  const [newItem, setNewItem] = useState("");
+
+  // Items derived from the meal plan for this week
+  const [generatedItems, setGeneratedItems] = useState<GroceryItem[]>([]);
+  // Items manually added by the user (persisted per week)
+  const [customItems, setCustomItems] = useState<GroceryItem[]>([]);
+  // Checked item IDs (persisted per week, independent of generated list)
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+
+  const checkedKey = `pantri-grocery-checked-${weekStart}`;
+  const customKey  = `pantri-grocery-custom-${weekStart}`;
+
+  // Regenerate list whenever the selected week changes
+  useEffect(() => {
+    let defaultServings = 2;
+    try {
+      const p = loadKitchenProfile();
+      if (p && typeof p.servings === "number") defaultServings = p.servings;
+    } catch {}
+
+    setGeneratedItems(generateGroceryItems(weekStart, defaultServings));
+
+    try {
+      const raw = localStorage.getItem(customKey);
+      setCustomItems(raw ? (JSON.parse(raw) as GroceryItem[]) : []);
+    } catch {
+      setCustomItems([]);
+    }
+
+    try {
+      const raw = localStorage.getItem(checkedKey);
+      setCheckedIds(raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set());
+    } catch {
+      setCheckedIds(new Set());
+    }
+  }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge generated + custom, applying checked state from the persisted set
+  const allItems: GroceryItem[] = [...generatedItems, ...customItems].map((item) => ({
+    ...item,
+    checked: checkedIds.has(item.id),
+  }));
+
+  const filtered = allItems.filter((item) => {
     if (catFilter !== "All" && item.category !== catFilter) return false;
     if (showPerishableOnly && !item.perishable) return false;
     return true;
@@ -114,16 +336,20 @@ export default function GroceryPage() {
     return acc;
   }, {});
 
-  const checked = weekItems.filter((i) => i.checked).length;
-  const total = weekItems.length;
+  const checkedCount = allItems.filter((i) => i.checked).length;
+  const total = allItems.length;
+  const hasAnything = total > 0;
 
   function toggleItem(id: string) {
-    setItems((prev) => ({
-      ...prev,
-      [weekOffset]: (prev[weekOffset] ?? []).map((item) =>
-        item.id === id ? { ...item, checked: !item.checked } : item
-      ),
-    }));
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(checkedKey, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
   }
 
   function addItem() {
@@ -132,12 +358,16 @@ export default function GroceryPage() {
       id: `custom-${Date.now()}`,
       name: newItem.trim(),
       amount: "",
-      category: "Pantry",
+      category: categorizeIngredient(newItem.trim()),
       checked: false,
       perishable: false,
       fromMeals: [],
     };
-    setItems((prev) => ({ ...prev, [weekOffset]: [...(prev[weekOffset] ?? []), item] }));
+    const next = [...customItems, item];
+    setCustomItems(next);
+    try {
+      localStorage.setItem(customKey, JSON.stringify(next));
+    } catch {}
     setNewItem("");
   }
 
@@ -148,18 +378,22 @@ export default function GroceryPage() {
         <div>
           <h1 className="font-serif text-3xl font-bold text-foreground">Grocery List</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {checked} of {total} items checked
+            {hasAnything
+              ? `${checkedCount} of ${total} items checked`
+              : "Plan your meals to generate your list"}
           </p>
         </div>
         <div className="flex gap-2">
           <button className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>Share</button>
-          <button className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>Print</button>
+          <button className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+            Print
+          </button>
         </div>
       </div>
 
       {/* Week tabs */}
       <div className="flex gap-1 rounded-xl border border-border bg-muted/20 p-1 mb-4">
-        {[-1, 0, 1, 2].map((offset) => (
+        {([-1, 0, 1, 2] as const).map((offset) => (
           <button
             key={offset}
             onClick={() => setWeekOffset(offset)}
@@ -180,7 +414,7 @@ export default function GroceryPage() {
       <div className="rounded-full bg-muted h-2 mb-4 overflow-hidden">
         <div
           className="bg-primary h-full rounded-full transition-all duration-500"
-          style={{ width: total > 0 ? `${(checked / total) * 100}%` : "0%" }}
+          style={{ width: total > 0 ? `${(checkedCount / total) * 100}%` : "0%" }}
         />
       </div>
 
@@ -197,7 +431,8 @@ export default function GroceryPage() {
                 : "bg-background text-muted-foreground border-border hover:border-primary/40"
             )}
           >
-            {c !== "All" ? `${CATEGORY_EMOJI[c]} ` : ""}{c}
+            {c !== "All" ? `${CATEGORY_EMOJI[c]} ` : ""}
+            {c}
           </button>
         ))}
         <button
@@ -216,20 +451,29 @@ export default function GroceryPage() {
       {/* Perishable legend */}
       <div className="flex flex-wrap items-center gap-3 mb-5 p-3 rounded-xl bg-muted/30 border border-border">
         <span className="text-xs font-medium text-muted-foreground">Freshness from purchase:</span>
-        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/30">1–2d · Use immediately</span>
-        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-accent/10 text-accent border-accent/30">3–5d · Use soon</span>
-        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-primary/10 text-primary border-primary/20">6d+ · Lasts the week</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/30">
+          1–2d · Use immediately
+        </span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-accent/10 text-accent border-accent/30">
+          3–5d · Use soon
+        </span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full border bg-primary/10 text-primary border-primary/20">
+          6d+ · Lasts the week
+        </span>
       </div>
 
-      {/* Empty state for future weeks */}
-      {(weekItems.length === 0) && (
+      {/* Empty state */}
+      {!hasAnything && (
         <div className="rounded-2xl border border-dashed border-border p-10 text-center">
           <p className="text-3xl mb-3">📅</p>
-          <p className="font-medium text-foreground mb-1">No list yet for this week</p>
+          <p className="font-medium text-foreground mb-1">No meals planned for this week</p>
           <p className="text-sm text-muted-foreground mb-4">
-            Plan your meals first and your grocery list will auto-generate.
+            Add meals to your planner and your grocery list will auto-generate here.
           </p>
-          <a href="/planner" className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}>
+          <a
+            href="/planner"
+            className={cn(buttonVariants({ size: "sm" }), "bg-primary hover:bg-primary/90")}
+          >
             Go to planner
           </a>
         </div>
@@ -261,20 +505,37 @@ export default function GroceryPage() {
                       )}
                     >
                       {/* Checkbox */}
-                      <div className={cn(
-                        "h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                        item.checked ? "bg-primary border-primary" : "border-muted-foreground/40"
-                      )}>
+                      <div
+                        className={cn(
+                          "h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                          item.checked ? "bg-primary border-primary" : "border-muted-foreground/40"
+                        )}
+                      >
                         {item.checked && (
-                          <svg className="h-3 w-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          <svg
+                            className="h-3 w-3 text-primary-foreground"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                          >
+                            <path
+                              d="M2 6l3 3 5-5"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
                           </svg>
                         )}
                       </div>
 
-                      {/* Name */}
+                      {/* Name + meal attribution */}
                       <div className="flex-1 min-w-0">
-                        <span className={cn("text-sm", item.checked && "line-through text-muted-foreground")}>
+                        <span
+                          className={cn(
+                            "text-sm",
+                            item.checked && "line-through text-muted-foreground"
+                          )}
+                        >
                           {item.name}
                         </span>
                         {item.fromMeals.length > 0 && (
@@ -284,13 +545,20 @@ export default function GroceryPage() {
                         )}
                       </div>
 
-                      {/* Amount */}
-                      <span className="text-xs text-muted-foreground shrink-0">{item.amount}</span>
+                      {/* Scaled amount */}
+                      {item.amount && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {item.amount}
+                        </span>
+                      )}
 
                       {/* Perishable badge */}
                       {shelf && (
                         <span
-                          className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0", shelf.color)}
+                          className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0",
+                            shelf.color
+                          )}
                           title={shelf.tip}
                         >
                           🕐 {shelf.label}

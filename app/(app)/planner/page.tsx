@@ -478,16 +478,20 @@ function DayTotalsCell({
 
 function MealSlotCard({
   recipe,
+  servings,
   onOpen,
   onPreview,
   onRandom,
   onCheatMeal,
+  onServingsChange,
 }: {
   recipe: Recipe | null;
+  servings: number;
   onOpen: () => void;
   onPreview: (recipe: Recipe) => void;
   onRandom: () => void;
   onCheatMeal: () => void;
+  onServingsChange: (n: number) => void;
 }) {
   if (!recipe) {
     return (
@@ -547,6 +551,22 @@ function MealSlotCard({
               <p className="text-[9px] text-muted-foreground mt-0.5">{m.label}</p>
             </div>
           ))}
+        </div>
+
+        {/* Servings control */}
+        <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-border/40">
+          <span className="text-[9px] text-muted-foreground">servings</span>
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onServingsChange(Math.max(1, servings - 1)); }}
+              className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all text-[11px] leading-none"
+            >−</button>
+            <span className="text-[10px] font-bold text-foreground w-4 text-center">{servings}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onServingsChange(Math.min(12, servings + 1)); }}
+              className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all text-[11px] leading-none"
+            >+</button>
+          </div>
         </div>
       </button>
 
@@ -630,6 +650,8 @@ export default function PlannerPage() {
   const [kitchenGoals, setKitchenGoals] = useState<KitchenGoals>(() => loadKitchenGoals());
   // Full kitchen profile — used for dietary/allergy filtering on the dice
   const [kitchenProfile, setKitchenProfile] = useState<Record<string, unknown>>({});
+  // Default servings from kitchen profile; falls back to 2 if not set
+  const defaultServings = (kitchenProfile.servings as number | undefined) ?? 2;
 
   /**
    * Global cycle counter for both day and week Balance buttons.
@@ -682,10 +704,29 @@ export default function PlannerPage() {
       ...prev,
       days: prev.days.map((day, i) => {
         if (!(sameForAll[mealType] ? true : i === dayIndex)) return day;
-        return { ...day, meals: { ...day.meals, [mealType]: { recipe } } };
+        // Preserve existing per-slot servings; fall back to kitchen default
+        const existingServings = day.meals[mealType].servings ?? defaultServings;
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe, servings: existingServings } } };
       }),
     }));
     closePicker();
+  }
+
+  function updateSlotServings(dayIndex: number, mealType: MealType, n: number) {
+    updatePlan((prev) => ({
+      ...prev,
+      days: prev.days.map((day, i) => {
+        // If sameForAll, update every day so they all show the same count
+        if (!(sameForAll[mealType] ? true : i === dayIndex)) return day;
+        return {
+          ...day,
+          meals: {
+            ...day.meals,
+            [mealType]: { ...day.meals[mealType], servings: n },
+          },
+        };
+      }),
+    }));
   }
 
   function removeRecipe() {
@@ -791,7 +832,8 @@ export default function PlannerPage() {
       ...prev,
       days: prev.days.map((day, i) => {
         if (!(sameForAll[mealType] ? true : i === effectiveIdx)) return day;
-        return { ...day, meals: { ...day.meals, [mealType]: { recipe } } };
+        const existingServings = day.meals[mealType].servings ?? defaultServings;
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe, servings: existingServings } } };
       }),
     }));
   }
@@ -816,7 +858,8 @@ export default function PlannerPage() {
       ...prev,
       days: prev.days.map((day, i) => {
         if (!(sameForAll[mealType] ? true : i === effectiveIdx)) return day;
-        return { ...day, meals: { ...day.meals, [mealType]: { recipe } } };
+        const existingServings = day.meals[mealType].servings ?? defaultServings;
+        return { ...day, meals: { ...day.meals, [mealType]: { recipe, servings: existingServings } } };
       }),
     }));
   }
@@ -878,7 +921,8 @@ export default function PlannerPage() {
           const pool = pools[type];
           if (pool.length === 0) continue;
           // Cycle through shuffled pool so all 7 days get variety
-          newMeals[type] = { recipe: pool[di % pool.length] };
+          const existingServings = day.meals[type].servings ?? defaultServings;
+          newMeals[type] = { recipe: pool[di % pool.length], servings: existingServings };
         }
         return { ...day, meals: newMeals };
       }),
@@ -1055,13 +1099,13 @@ export default function PlannerPage() {
           if (!sameForAll[type]) continue;
           if (di !== 0) continue;
           const pinned = pinnedRecipes[type];
-          if (pinned) newMeals[type] = { recipe: pinned };
+          if (pinned) newMeals[type] = { recipe: pinned, servings: day.meals[type].servings ?? defaultServings };
         }
 
         // Apply day-specific picks
         for (const { type } of nonPinnedTypes) {
           const recipe = dayMealPicks[di]?.[type];
-          if (recipe) newMeals[type] = { recipe };
+          if (recipe) newMeals[type] = { recipe, servings: day.meals[type].servings ?? defaultServings };
         }
 
         return { ...day, meals: newMeals };
@@ -1138,7 +1182,7 @@ export default function PlannerPage() {
         for (const { type } of MEAL_LABELS) {
           const targetIdx = sameForAll[type] ? 0 : dayIndex;
           if (i !== targetIdx) continue;
-          if (picks[type]) newMeals[type] = { recipe: picks[type]! };
+          if (picks[type]) newMeals[type] = { recipe: picks[type]!, servings: day.meals[type].servings ?? defaultServings };
         }
         return { ...day, meals: newMeals };
       }),
@@ -1335,18 +1379,21 @@ export default function PlannerPage() {
                   )}
                 </div>
                 {plan.days.map((day, di) => {
-                  const effectiveRecipe = sameForAll[type]
-                    ? plan.days[0].meals[type].recipe
-                    : day.meals[type].recipe;
+                  const effectiveDayIdx = sameForAll[type] ? 0 : di;
+                  const effectiveSlot = plan.days[effectiveDayIdx].meals[type];
+                  const effectiveRecipe = effectiveSlot.recipe;
+                  const effectiveServings = effectiveSlot.servings ?? defaultServings;
                   const isTodayCol = weekOffset === 0 && new Date().getDay() === di;
                   return (
                     <div key={day.day} className={cn("min-h-[130px] rounded-xl", isTodayCol && "bg-primary/[0.04]")}>
                       <MealSlotCard
                         recipe={effectiveRecipe}
-                        onOpen={() => openPicker(sameForAll[type] ? 0 : di, type)}
-                        onPreview={(recipe) => openPreview(recipe, sameForAll[type] ? 0 : di, type)}
-                        onRandom={() => assignRandomRecipe(sameForAll[type] ? 0 : di, type)}
-                        onCheatMeal={() => assignCheatMeal(sameForAll[type] ? 0 : di, type)}
+                        servings={effectiveServings}
+                        onOpen={() => openPicker(effectiveDayIdx, type)}
+                        onPreview={(recipe) => openPreview(recipe, effectiveDayIdx, type)}
+                        onRandom={() => assignRandomRecipe(effectiveDayIdx, type)}
+                        onCheatMeal={() => assignCheatMeal(effectiveDayIdx, type)}
+                        onServingsChange={(n) => updateSlotServings(effectiveDayIdx, type, n)}
                       />
                     </div>
                   );

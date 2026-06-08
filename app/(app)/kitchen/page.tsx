@@ -28,8 +28,6 @@ type KitchenProfile = {
   dietaryPrefs: string[];
   allergies: string[];
   cuisinePrefs: string[];
-  mealConsistency: { breakfast: "same" | "vary"; lunch: "same" | "vary"; dinner: "same" | "vary" };
-  cheatDaysPerWeek: number;
   cheatDayPrefs: string[];
   budgetPerWeek: number;
   cookTimeMax: number;
@@ -208,8 +206,6 @@ const DEFAULT_PROFILE: KitchenProfile = {
   dietaryPrefs: [],
   allergies: [],
   cuisinePrefs: ["Japanese", "Mexican", "Thai", "Indian", "Greek"],
-  mealConsistency: { breakfast: "same", lunch: "vary", dinner: "vary" },
-  cheatDaysPerWeek: 1,
   cheatDayPrefs: ["burgers", "pizza"],
   budgetPerWeek: 150,
   cookTimeMax: 45,
@@ -807,10 +803,11 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Meal settings ── */}
-        <Section title="Meal Settings" subtitle="How you like your week structured.">
+        <Section title="Meal Settings" subtitle="Default settings applied to each meal slot — override per-meal right in the planner.">
           <div className="space-y-5">
             <div>
-              <label className="text-sm font-medium text-foreground block mb-3">Servings per meal</label>
+              <label className="text-sm font-medium text-foreground block mb-1">Default servings per meal</label>
+              <p className="text-xs text-muted-foreground mb-3">How many people you're cooking for — adjustable per slot in the planner</p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => set("servings", Math.max(1, profile.servings - 1))}
@@ -839,35 +836,6 @@ export default function KitchenPage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium text-foreground block mb-3">Meal variety</label>
-              <div className="space-y-2">
-                {(["breakfast", "lunch", "dinner"] as const).map((meal) => (
-                  <div key={meal} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
-                    <span className="text-sm capitalize text-foreground">
-                      {meal === "breakfast" ? "🌅" : meal === "lunch" ? "☀️" : "🌙"} {meal}
-                    </span>
-                    <div className="flex rounded-lg border border-border bg-muted/20 p-0.5 gap-0.5">
-                      {(["same", "vary"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() => set("mealConsistency", { ...profile.mealConsistency, [meal]: mode })}
-                          className={cn(
-                            "px-3 py-1 rounded-md text-xs font-medium transition-all",
-                            profile.mealConsistency[meal] === mode
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {mode === "same" ? "Same daily" : "Vary daily"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
               <div className="flex justify-between mb-2">
                 <label className="text-sm font-medium text-foreground">Weekly budget</label>
                 <span className="text-sm font-bold text-primary">${profile.budgetPerWeek}</span>
@@ -886,40 +854,17 @@ export default function KitchenPage() {
         </Section>
 
         {/* ── Cheat days ── */}
-        <Section title="Cheat Days 🍕" subtitle="Let yourself enjoy something indulgent. AI plans your treat meals too.">
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm font-medium text-foreground">Cheat days per week</label>
-                <span className="text-sm font-bold text-accent">{profile.cheatDaysPerWeek === 0 ? "None" : profile.cheatDaysPerWeek}</span>
-              </div>
-              <input
-                type="range" min={0} max={3} step={1}
-                value={profile.cheatDaysPerWeek}
-                onChange={(e) => set("cheatDaysPerWeek", Number(e.target.value))}
-                className="w-full accent-[oklch(0.62_0.14_42)]"
+        <Section title="Cheat Meals 🍕" subtitle="What you love to indulge in — AI can include these as treat options in your plan.">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {CHEAT_PREF_OPTIONS.map((opt) => (
+              <Toggle
+                key={opt.id}
+                active={profile.cheatDayPrefs.includes(opt.id)}
+                onToggle={() => toggleList("cheatDayPrefs", opt.id)}
+                label={opt.label}
+                emoji={opt.emoji}
               />
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>None</span><span>1</span><span>2</span><span>3</span>
-              </div>
-            </div>
-
-            {profile.cheatDaysPerWeek > 0 && (
-              <div>
-                <p className="text-sm font-medium text-foreground mb-3">What do you love to indulge in?</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {CHEAT_PREF_OPTIONS.map((opt) => (
-                    <Toggle
-                      key={opt.id}
-                      active={profile.cheatDayPrefs.includes(opt.id)}
-                      onToggle={() => toggleList("cheatDayPrefs", opt.id)}
-                      label={opt.label}
-                      emoji={opt.emoji}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         </Section>
 
