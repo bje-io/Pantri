@@ -1,5 +1,36 @@
 export type MealType = "breakfast" | "lunch" | "dinner";
 
+// Recipes can additionally be tagged as snacks (planner slots between meals)
+export type RecipeMealType = MealType | "snack";
+
+// Planner slot keys — 5 per day: 3 meals + 2 snacks
+export type SlotKey = "breakfast" | "morningSnack" | "lunch" | "afternoonSnack" | "dinner";
+
+export const SLOT_KEYS: SlotKey[] = [
+  "breakfast",
+  "morningSnack",
+  "lunch",
+  "afternoonSnack",
+  "dinner",
+];
+
+/** Which recipe meal-type a planner slot draws from */
+export function slotRecipeType(slot: SlotKey): RecipeMealType {
+  if (slot === "morningSnack" || slot === "afternoonSnack") return "snack";
+  return slot;
+}
+
+// Daily calorie/macro share per slot. Meals carry 80%, snacks fill the
+// remaining 20% — snacks exist precisely to close the macro gap that
+// three square meals alone can't reach.
+export const SLOT_SHARES: Record<SlotKey, number> = {
+  breakfast:      0.20,
+  morningSnack:   0.10,
+  lunch:          0.30,
+  afternoonSnack: 0.10,
+  dinner:         0.30,
+};
+
 export type Macro = {
   calories: number;
   protein: number;
@@ -18,7 +49,7 @@ export type Recipe = {
   id: string;
   title: string;
   cuisine: string;
-  mealType: MealType[];
+  mealType: RecipeMealType[];
   cookTime: number;
   prepTime: number;
   servings: number;
@@ -40,11 +71,7 @@ export type MealSlot = {
 export type DayPlan = {
   day: string;
   isCheatDay: boolean;
-  meals: {
-    breakfast: MealSlot;
-    lunch: MealSlot;
-    dinner: MealSlot;
-  };
+  meals: Record<SlotKey, MealSlot>;
 };
 
 export type WeekPlan = {
@@ -1289,11 +1316,27 @@ export const CHEAT_DAY_RECIPES: Recipe[] = [
   },
 ];
 
+// Extended seed packs — 100 extra meals + 40 snacks (type-only imports
+// in those files, so no circular-import issue at runtime).
+import { BREAKFAST_RECIPES_2 } from "./seed-breakfasts";
+import { LUNCH_RECIPES_2 } from "./seed-lunches";
+import { DINNER_RECIPES_2 } from "./seed-dinners";
+import { CHEAT_RECIPES_2 } from "./seed-cheats";
+import { SNACK_RECIPES } from "./seed-snacks";
+
+export { SNACK_RECIPES };
+
+export const ALL_BREAKFASTS: Recipe[] = [...BREAKFAST_RECIPES, ...BREAKFAST_RECIPES_2];
+export const ALL_LUNCHES: Recipe[]    = [...LUNCH_RECIPES, ...LUNCH_RECIPES_2];
+export const ALL_DINNERS: Recipe[]    = [...DINNER_RECIPES, ...DINNER_RECIPES_2];
+export const ALL_CHEATS: Recipe[]     = [...CHEAT_DAY_RECIPES, ...CHEAT_RECIPES_2];
+
 export const ALL_RECIPES: Recipe[] = [
-  ...BREAKFAST_RECIPES,
-  ...LUNCH_RECIPES,
-  ...DINNER_RECIPES,
-  ...CHEAT_DAY_RECIPES,
+  ...ALL_BREAKFASTS,
+  ...ALL_LUNCHES,
+  ...ALL_DINNERS,
+  ...ALL_CHEATS,
+  ...SNACK_RECIPES,
 ];
 
 // Helper to get a recipe by id
@@ -1326,10 +1369,12 @@ export function buildDefaultWeekPlan(weekStart: string): WeekPlan {
     new Date(weekStart + "T12:00:00Z").getTime() / (7 * 24 * 60 * 60 * 1000)
   );
 
-  // Each meal type gets a different seed offset so their shuffles are independent
-  const breakfasts = seededShuffle(BREAKFAST_RECIPES, weekNum);
-  const lunches    = seededShuffle(LUNCH_RECIPES,    weekNum + 31);
-  const dinners    = seededShuffle(DINNER_RECIPES,   weekNum + 67);
+  // Each slot type gets a different seed offset so their shuffles are independent
+  const breakfasts = seededShuffle(ALL_BREAKFASTS, weekNum);
+  const lunches    = seededShuffle(ALL_LUNCHES,    weekNum + 31);
+  const dinners    = seededShuffle(ALL_DINNERS,    weekNum + 67);
+  const amSnacks   = seededShuffle(SNACK_RECIPES,  weekNum + 101);
+  const pmSnacks   = seededShuffle(SNACK_RECIPES,  weekNum + 149);
 
   return {
     weekStart,
@@ -1337,9 +1382,31 @@ export function buildDefaultWeekPlan(weekStart: string): WeekPlan {
       day,
       isCheatDay: false,
       meals: {
-        breakfast: { recipe: breakfasts[i % breakfasts.length] },
-        lunch:     { recipe: lunches[i   % lunches.length]    },
-        dinner:    { recipe: dinners[i   % dinners.length]    },
+        breakfast:      { recipe: breakfasts[i % breakfasts.length] },
+        morningSnack:   { recipe: amSnacks[i   % amSnacks.length]   },
+        lunch:          { recipe: lunches[i    % lunches.length]    },
+        afternoonSnack: { recipe: pmSnacks[i   % pmSnacks.length]   },
+        dinner:         { recipe: dinners[i    % dinners.length]    },
+      },
+    })),
+  };
+}
+
+/**
+ * Backfills snack slots on plans saved before snacks existed.
+ * Older localStorage plans only have breakfast/lunch/dinner keys.
+ */
+export function normalizeWeekPlan(plan: WeekPlan): WeekPlan {
+  return {
+    ...plan,
+    days: plan.days.map((day) => ({
+      ...day,
+      meals: {
+        breakfast:      day.meals.breakfast      ?? { recipe: null },
+        morningSnack:   day.meals.morningSnack   ?? { recipe: null },
+        lunch:          day.meals.lunch          ?? { recipe: null },
+        afternoonSnack: day.meals.afternoonSnack ?? { recipe: null },
+        dinner:         day.meals.dinner         ?? { recipe: null },
       },
     })),
   };

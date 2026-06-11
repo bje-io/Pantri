@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { loadWeekPlan, loadKitchenProfile } from "@/lib/local-store";
-import type { MealType } from "@/lib/meal-data";
+import { SLOT_KEYS, type SlotKey } from "@/lib/meal-data";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ type GroceryItem = {
 };
 
 type DayMealSlot = {
-  mealType: MealType;
+  mealType: SlotKey;
   recipeName: string;
   items: GroceryItem[];
 };
@@ -192,31 +192,39 @@ function accToItems(acc: Map<string, AccEntry>, idPrefix: string): GroceryItem[]
 
 // ── Data generation ───────────────────────────────────────────────
 
-const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
+const SFA_DEFAULTS: Record<SlotKey, boolean> = {
+  breakfast: false, morningSnack: false, lunch: false, afternoonSnack: false, dinner: false,
+};
 
-function loadSameForAll(weekStart: string): Record<MealType, boolean> {
+function loadSameForAll(weekStart: string): Record<SlotKey, boolean> {
   try {
     const raw = localStorage.getItem(`pantri-sameforall-${weekStart}`);
-    if (raw) return JSON.parse(raw) as Record<MealType, boolean>;
+    // Spread over defaults so pre-snack saved data gains the snack keys
+    if (raw) return { ...SFA_DEFAULTS, ...(JSON.parse(raw) as Partial<Record<SlotKey, boolean>>) };
   } catch {}
-  return { breakfast: false, lunch: false, dinner: false };
+  return SFA_DEFAULTS;
 }
 
-/** Combined + per-meal-type ingredient lists (for list and meal views). */
+const EMPTY_BY_MEAL: Record<SlotKey, GroceryItem[]> = {
+  breakfast: [], morningSnack: [], lunch: [], afternoonSnack: [], dinner: [],
+};
+
+/** Combined + per-slot ingredient lists (for list and meal views). */
 function generateAggregated(weekStart: string, defaultServings: number): {
   combined: GroceryItem[];
-  byMeal: Record<MealType, GroceryItem[]>;
+  byMeal: Record<SlotKey, GroceryItem[]>;
 } {
   const plan = loadWeekPlan(weekStart);
-  if (!plan) return { combined: [], byMeal: { breakfast: [], lunch: [], dinner: [] } };
+  if (!plan) return { combined: [], byMeal: { ...EMPTY_BY_MEAL } };
   const sfa = loadSameForAll(weekStart);
 
   const combinedAcc = new Map<string, AccEntry>();
-  const mealAccs: Record<MealType, Map<string, AccEntry>> = {
-    breakfast: new Map(), lunch: new Map(), dinner: new Map(),
+  const mealAccs: Record<SlotKey, Map<string, AccEntry>> = {
+    breakfast: new Map(), morningSnack: new Map(), lunch: new Map(),
+    afternoonSnack: new Map(), dinner: new Map(),
   };
 
-  for (const mt of MEAL_TYPES) {
+  for (const mt of SLOT_KEYS) {
     if (sfa[mt]) {
       const slot = plan.days[0].meals[mt];
       if (!slot.recipe) continue;
@@ -243,9 +251,11 @@ function generateAggregated(weekStart: string, defaultServings: number): {
   return {
     combined: accToItems(combinedAcc, `gen-${weekStart}`),
     byMeal: {
-      breakfast: accToItems(mealAccs.breakfast, `bfst-${weekStart}`),
-      lunch:     accToItems(mealAccs.lunch,     `lnch-${weekStart}`),
-      dinner:    accToItems(mealAccs.dinner,     `dnr-${weekStart}`),
+      breakfast:      accToItems(mealAccs.breakfast,      `bfst-${weekStart}`),
+      morningSnack:   accToItems(mealAccs.morningSnack,   `amsk-${weekStart}`),
+      lunch:          accToItems(mealAccs.lunch,          `lnch-${weekStart}`),
+      afternoonSnack: accToItems(mealAccs.afternoonSnack, `pmsk-${weekStart}`),
+      dinner:         accToItems(mealAccs.dinner,         `dnr-${weekStart}`),
     },
   };
 }
@@ -263,7 +273,7 @@ function generateDayView(weekStart: string, defaultServings: number): DayViewEnt
     date.setDate(date.getDate() + dayIndex);
     const dateLabel = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-    const slots: DayMealSlot[] = MEAL_TYPES.flatMap((mt) => {
+    const slots: DayMealSlot[] = SLOT_KEYS.flatMap((mt) => {
       // Respect sameForAll — if on, every day mirrors day 0's slot
       const effectiveSlot = sfa[mt] ? plan.days[0].meals[mt] : day.meals[mt];
       if (!effectiveSlot.recipe) return [];
@@ -308,10 +318,12 @@ const CATEGORIES = ["All", "Produce", "Proteins", "Dairy & Eggs", "Grains & Nood
 const CAT_EMOJI: Record<string, string> = {
   Produce: "🥬", Proteins: "🥩", "Dairy & Eggs": "🥛", "Grains & Noodles": "🍚", Pantry: "🫙",
 };
-const MEAL_META: { type: MealType; emoji: string; label: string }[] = [
-  { type: "breakfast", emoji: "🌅", label: "Breakfast" },
-  { type: "lunch",     emoji: "☀️", label: "Lunch" },
-  { type: "dinner",    emoji: "🌙", label: "Dinner" },
+const MEAL_META: { type: SlotKey; emoji: string; label: string }[] = [
+  { type: "breakfast",      emoji: "🌅", label: "Breakfast" },
+  { type: "morningSnack",   emoji: "🥜", label: "AM Snack" },
+  { type: "lunch",          emoji: "☀️", label: "Lunch" },
+  { type: "afternoonSnack", emoji: "🍎", label: "PM Snack" },
+  { type: "dinner",         emoji: "🌙", label: "Dinner" },
 ];
 
 // ── Shared item row component ─────────────────────────────────────
@@ -362,21 +374,21 @@ export default function GroceryPage() {
   // "day" = planner mirror (default), "meal" = by breakfast/lunch/dinner, "list" = combined by category
   const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [catFilter, setCatFilter] = useState("All");
-  const [activeMeals, setActiveMeals] = useState<Set<MealType>>(
-    new Set<MealType>(["breakfast", "lunch", "dinner"])
+  const [activeMeals, setActiveMeals] = useState<Set<SlotKey>>(
+    new Set<SlotKey>(SLOT_KEYS)
   );
   const [showPerishOnly, setShowPerishOnly] = useState(false);
   const [newItem, setNewItem] = useState("");
 
   // Collapsible state
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([0, 1, 2, 3, 4, 5, 6]));
-  const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(
-    new Set<MealType>(["breakfast", "lunch", "dinner"])
+  const [expandedMeals, setExpandedMeals] = useState<Set<SlotKey>>(
+    new Set<SlotKey>(SLOT_KEYS)
   );
 
   // Data
   const [combinedItems, setCombinedItems] = useState<GroceryItem[]>([]);
-  const [byMeal, setByMeal]               = useState<Record<MealType, GroceryItem[]>>({ breakfast: [], lunch: [], dinner: [] });
+  const [byMeal, setByMeal]               = useState<Record<SlotKey, GroceryItem[]>>({ ...EMPTY_BY_MEAL });
   const [dayView, setDayView]             = useState<DayViewEntry[]>([]);
   const [customItems, setCustomItems]     = useState<GroceryItem[]>([]);
   const [checkedIds, setCheckedIds]       = useState<Set<string>>(new Set());
@@ -434,11 +446,11 @@ export default function GroceryPage() {
     setExpandedDays((p) => { const n = new Set(p); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
   }
 
-  function toggleExpandMeal(t: MealType) {
+  function toggleExpandMeal(t: SlotKey) {
     setExpandedMeals((p) => { const n = new Set(p); n.has(t) ? n.delete(t) : n.add(t); return n; });
   }
 
-  function toggleActiveMeal(t: MealType) {
+  function toggleActiveMeal(t: SlotKey) {
     setActiveMeals((p) => { const n = new Set(p); n.has(t) ? n.delete(t) : n.add(t); return n; });
   }
 
@@ -536,7 +548,7 @@ export default function GroceryPage() {
           ))}
           {activeMeals.size < 3 && (
             <button
-              onClick={() => setActiveMeals(new Set<MealType>(["breakfast","lunch","dinner"]))}
+              onClick={() => setActiveMeals(new Set<SlotKey>(SLOT_KEYS))}
               className="ml-auto text-xs text-primary hover:underline"
             >
               All meals

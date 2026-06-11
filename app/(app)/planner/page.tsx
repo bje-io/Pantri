@@ -7,8 +7,10 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   buildDefaultWeekPlan,
   ALL_RECIPES,
+  SLOT_SHARES,
+  slotRecipeType,
   type WeekPlan,
-  type MealType,
+  type SlotKey,
   type Recipe,
 } from "@/lib/meal-data";
 import {
@@ -49,17 +51,34 @@ function formatWeekRange(iso: string): string {
   })}`;
 }
 
-const MEAL_LABELS: { type: MealType; emoji: string; label: string }[] = [
-  { type: "breakfast", emoji: "🌅", label: "Breakfast" },
-  { type: "lunch", emoji: "☀️", label: "Lunch" },
-  { type: "dinner", emoji: "🌙", label: "Dinner" },
+const SLOT_LABELS: { type: SlotKey; emoji: string; label: string; isSnack?: boolean }[] = [
+  { type: "breakfast",      emoji: "🌅", label: "Breakfast" },
+  { type: "morningSnack",   emoji: "🥜", label: "AM Snack", isSnack: true },
+  { type: "lunch",          emoji: "☀️", label: "Lunch" },
+  { type: "afternoonSnack", emoji: "🍎", label: "PM Snack", isSnack: true },
+  { type: "dinner",         emoji: "🌙", label: "Dinner" },
 ];
+
+/** Human-friendly lowercase slot name for modal titles etc. */
+function slotDisplayName(slot: SlotKey): string {
+  if (slot === "morningSnack")   return "morning snack";
+  if (slot === "afternoonSnack") return "afternoon snack";
+  return slot;
+}
+
+const SFA_DEFAULTS: Record<SlotKey, boolean> = {
+  breakfast: false,
+  morningSnack: false,
+  lunch: false,
+  afternoonSnack: false,
+  dinner: false,
+};
 
 // ── Picker state type ─────────────────────────────────────────────
 
 type PickerTarget = {
   dayIndex: number;
-  mealType: MealType;
+  mealType: SlotKey;
 };
 
 // ── Recipe Preview Modal ──────────────────────────────────────────
@@ -272,7 +291,7 @@ function RecipePickerModal({
   onRemove,
   onClose,
 }: {
-  mealType: MealType;
+  mealType: SlotKey;
   currentRecipe: Recipe | null;
   allWeek: boolean;
   onSelect: (recipe: Recipe) => void;
@@ -289,9 +308,12 @@ function RecipePickerModal({
     ...ALL_RECIPES,
   ];
 
-  // Show all recipes (including cheat meals) — cheat meals are just another option
-  const pool = allAvailable.filter(
-    (r) => r.isCheatDay || r.mealType.includes(mealType)
+  // Snack slots only show snacks; meal slots show matching meals + all cheats
+  const recipeType = slotRecipeType(mealType);
+  const pool = allAvailable.filter((r) =>
+    recipeType === "snack"
+      ? r.mealType.includes("snack")
+      : r.isCheatDay || r.mealType.includes(recipeType)
   );
 
   const filtered = pool.filter(
@@ -312,7 +334,7 @@ function RecipePickerModal({
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border shrink-0">
           <div>
             <h2 className="font-serif text-lg font-bold text-foreground">
-              Pick a {mealType}
+              Pick a {slotDisplayName(mealType)}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {filtered.length} recipe{filtered.length !== 1 ? "s" : ""} available
@@ -523,6 +545,7 @@ function DayTotalsCell({
 function MealSlotCard({
   recipe,
   servings,
+  showCheat = true,
   onOpen,
   onPreview,
   onRandom,
@@ -531,6 +554,8 @@ function MealSlotCard({
 }: {
   recipe: Recipe | null;
   servings: number;
+  /** Snack slots have no cheat meals — hides the 🍕 hover action */
+  showCheat?: boolean;
   onOpen: () => void;
   onPreview: (recipe: Recipe) => void;
   onRandom: () => void;
@@ -628,13 +653,15 @@ function MealSlotCard({
         >
           🎲
         </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onCheatMeal(); }}
-          title="Random cheat meal"
-          className="w-6 h-6 rounded-full bg-background/95 border border-accent/40 hover:border-accent/70 hover:bg-accent/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
-        >
-          🍕
-        </button>
+        {showCheat && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onCheatMeal(); }}
+            title="Random cheat meal"
+            className="w-6 h-6 rounded-full bg-background/95 border border-accent/40 hover:border-accent/70 hover:bg-accent/5 flex items-center justify-center text-[11px] shadow-sm transition-all"
+          >
+            🍕
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onOpen(); }}
           title="Pick a recipe"
@@ -667,13 +694,14 @@ export default function PlannerPage() {
 
     try {
       const savedSFA = localStorage.getItem(`pantri-sameforall-${weekStart}`);
+      // Spread over defaults so pre-snack saved data gains the snack keys
       setSameForAll(
         savedSFA
-          ? (JSON.parse(savedSFA) as Record<MealType, boolean>)
-          : { breakfast: false, lunch: false, dinner: false }
+          ? { ...SFA_DEFAULTS, ...(JSON.parse(savedSFA) as Partial<Record<SlotKey, boolean>>) }
+          : SFA_DEFAULTS
       );
     } catch {
-      setSameForAll({ breakfast: false, lunch: false, dinner: false });
+      setSameForAll(SFA_DEFAULTS);
     }
   }, [weekStart]);
 
@@ -714,20 +742,16 @@ export default function PlannerPage() {
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PickerTarget | null>(null);
 
-  const [sameForAll, setSameForAll] = useState<Record<MealType, boolean>>({
-    breakfast: false,
-    lunch: false,
-    dinner: false,
-  });
+  const [sameForAll, setSameForAll] = useState<Record<SlotKey, boolean>>(SFA_DEFAULTS);
 
   const weekLabel = formatWeekRange(weekStart);
 
-  function openPicker(dayIndex: number, mealType: MealType) {
+  function openPicker(dayIndex: number, mealType: SlotKey) {
     setPickerTarget({ dayIndex, mealType });
   }
   function closePicker() { setPickerTarget(null); }
 
-  function openPreview(recipe: Recipe, dayIndex: number, mealType: MealType) {
+  function openPreview(recipe: Recipe, dayIndex: number, mealType: SlotKey) {
     setPreviewRecipe(recipe);
     setPreviewTarget({ dayIndex, mealType });
   }
@@ -751,7 +775,7 @@ export default function PlannerPage() {
     closePicker();
   }
 
-  function updateSlotServings(dayIndex: number, mealType: MealType, n: number) {
+  function updateSlotServings(dayIndex: number, mealType: SlotKey, n: number) {
     updatePlan((prev) => ({
       ...prev,
       days: prev.days.map((day, i) => {
@@ -844,18 +868,19 @@ export default function PlannerPage() {
     return filtered;
   }
 
-  function assignRandomRecipe(dayIndex: number, mealType: MealType) {
+  function assignRandomRecipe(dayIndex: number, mealType: SlotKey) {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
     const combined = buildCombinedPool();
 
-    // Start with meal-type filtered pool, then apply kitchen profile filters
+    // Start with slot-type filtered pool, then apply kitchen profile filters
+    const recipeType = slotRecipeType(mealType);
     const typePool = applyKitchenFilters(
-      combined.filter((r) => !r.isCheatDay && r.mealType.includes(mealType))
+      combined.filter((r) => !r.isCheatDay && r.mealType.includes(recipeType))
     );
 
-    // Goal-aware: prefer recipes within ±10% of per-meal calorie target
-    const perMealTarget = derivedCalories(kitchenGoals.macros) / 3;
+    // Goal-aware: prefer recipes within ±10% of this slot's calorie share
+    const perMealTarget = derivedCalories(kitchenGoals.macros) * SLOT_SHARES[mealType];
     const lo = perMealTarget * 0.9;
     const hi = perMealTarget * 1.1;
     const goalPool = typePool.filter((r) => r.macros.calories >= lo && r.macros.calories <= hi);
@@ -877,14 +902,16 @@ export default function PlannerPage() {
     }));
   }
 
-  function assignCheatMeal(dayIndex: number, mealType: MealType) {
+  function assignCheatMeal(dayIndex: number, mealType: SlotKey) {
     const effectiveIdx = sameForAll[mealType] ? 0 : dayIndex;
     const day = plan.days[effectiveIdx];
     const combined = buildCombinedPool();
 
-    // Only pick cheat meals that match this specific meal type — never cross-place
+    // Only pick cheat meals that match this specific meal type — never cross-place.
+    // Snack slots map to "snack" which no cheat recipe carries → no-op by design.
+    const recipeType = slotRecipeType(mealType);
     const pool = combined.filter(
-      (r) => r.isCheatDay === true && Array.isArray(r.mealType) && r.mealType.includes(mealType)
+      (r) => r.isCheatDay === true && Array.isArray(r.mealType) && r.mealType.includes(recipeType)
     );
     if (pool.length === 0) return; // no cheat meal exists for this meal type, do nothing
 
@@ -903,7 +930,7 @@ export default function PlannerPage() {
     }));
   }
 
-  function toggleSameForAll(mealType: MealType) {
+  function toggleSameForAll(mealType: SlotKey) {
     const turningOn = !sameForAll[mealType];
     const next = { ...sameForAll, [mealType]: turningOn };
     setSameForAll(next);
@@ -929,16 +956,18 @@ export default function PlannerPage() {
     setConfirmReset(false);
 
     const combined = buildCombinedPool();
-    const perMealTarget = derivedCalories(kitchenGoals.macros) / 3;
-    const lo = perMealTarget * 0.9;
-    const hi = perMealTarget * 1.1;
+    const dailyCal = derivedCalories(kitchenGoals.macros);
 
-    // Build a shuffled pool per meal type (kitchen-filtered + goal-aware)
-    const pools = {} as Record<MealType, Recipe[]>;
-    for (const { type } of MEAL_LABELS) {
+    // Build a shuffled pool per slot type (kitchen-filtered + goal-aware)
+    const pools = {} as Record<SlotKey, Recipe[]>;
+    for (const { type } of SLOT_LABELS) {
       const base = applyKitchenFilters(
-        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(slotRecipeType(type)))
       );
+      // Goal window scaled to this slot's share of daily calories
+      const slotTarget = dailyCal * SLOT_SHARES[type];
+      const lo = slotTarget * 0.9;
+      const hi = slotTarget * 1.1;
       const goal = base.filter((r) => r.macros.calories >= lo && r.macros.calories <= hi);
       const src  = goal.length > 0 ? goal : base;
       // Fisher-Yates shuffle for maximum variety
@@ -954,7 +983,7 @@ export default function PlannerPage() {
       ...prev,
       days: prev.days.map((day, di) => {
         const newMeals = { ...day.meals };
-        for (const { type } of MEAL_LABELS) {
+        for (const { type } of SLOT_LABELS) {
           // sameForAll: only assign day 0; other days will mirror it via display logic
           if (sameForAll[type] && di > 0) continue;
           const pool = pools[type];
@@ -985,24 +1014,19 @@ export default function PlannerPage() {
    *     algorithm prefers fresh options across the 7 days.
    *
    * Scoring: |actual − target| / target, weighted cal×2, pro×1, carb×0.5, fat×0.5.
-   * Meal-share split: breakfast 25%, lunch 35%, dinner 40% of daily target.
+   * Slot-share split: breakfast 20%, snacks 10% each, lunch 30%, dinner 30%
+   * of the daily target — snacks are first-class macro contributors here,
+   * which is exactly how the gap to daily goals gets closed.
    */
   function rebalanceMeals() {
     const combined  = buildCombinedPool();
     const dailyCal  = derivedCalories(kitchenGoals.macros);
 
-    // Meal-weighted split: breakfast 25%, lunch 35%, dinner 40%
-    const MEAL_SHARES: Record<MealType, number> = {
-      breakfast: 0.25,
-      lunch:     0.35,
-      dinner:    0.40,
-    };
-
-    // Build kitchen-filtered pools per meal type (cheat meals excluded)
-    const pools: Record<MealType, Recipe[]> = {} as Record<MealType, Recipe[]>;
-    for (const { type } of MEAL_LABELS) {
+    // Build kitchen-filtered pools per slot type (cheat meals excluded)
+    const pools: Record<SlotKey, Recipe[]> = {} as Record<SlotKey, Recipe[]>;
+    for (const { type } of SLOT_LABELS) {
       pools[type] = applyKitchenFilters(
-        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(slotRecipeType(type)))
       );
     }
 
@@ -1049,20 +1073,20 @@ export default function PlannerPage() {
     };
 
     const usedIds = new Set<string>();
-    const pinnedRecipes: Partial<Record<MealType, Recipe>> = {};
+    const pinnedRecipes: Partial<Record<SlotKey, Recipe>> = {};
     let slotCounter = 0; // advances with every pick so each slot uses a different rank offset
 
-    for (const { type } of MEAL_LABELS) {
+    for (const { type } of SLOT_LABELS) {
       if (!sameForAll[type]) continue;
       const pool = pools[type];
       if (pool.length === 0) continue;
 
-      // Target per day for this meal type
+      // Target per day for this slot type (dailyCal is already per-day)
       const perDayTarget = {
-        cal:  (dailyCal                    / 7) * MEAL_SHARES[type],
-        pro:  (kitchenGoals.macros.protein / 7) * MEAL_SHARES[type],
-        carb: (kitchenGoals.macros.carbs   / 7) * MEAL_SHARES[type],
-        fat:  (kitchenGoals.macros.fat     / 7) * MEAL_SHARES[type],
+        cal:  dailyCal                    * SLOT_SHARES[type],
+        pro:  kitchenGoals.macros.protein * SLOT_SHARES[type],
+        carb: kitchenGoals.macros.carbs   * SLOT_SHARES[type],
+        fat:  kitchenGoals.macros.fat     * SLOT_SHARES[type],
       };
 
       const recipe = pickAtStep(pool, perDayTarget, usedIds, slotCounter++);
@@ -1077,13 +1101,13 @@ export default function PlannerPage() {
     }
 
     // ── Phase 2: assign non-pinned slots day-by-day ────────────────
-    const nonPinnedTypes = MEAL_LABELS.filter(({ type }) => !sameForAll[type]);
+    const nonPinnedTypes = SLOT_LABELS.filter(({ type }) => !sameForAll[type]);
 
     const dayBudgetRemaining = { ...weeklyRemaining };
     let daysLeft = 7;
 
     // Build day assignments
-    const dayMealPicks: Record<MealType, Recipe>[] = [];
+    const dayMealPicks: Partial<Record<SlotKey, Recipe>>[] = [];
 
     for (let di = 0; di < 7; di++) {
       const perDayBudget = {
@@ -1093,7 +1117,7 @@ export default function PlannerPage() {
         fat:  dayBudgetRemaining.fat  / daysLeft,
       };
 
-      const dayPicks: Partial<Record<MealType, Recipe>> = {};
+      const dayPicks: Partial<Record<SlotKey, Recipe>> = {};
       let dayActual = { cal: 0, pro: 0, carb: 0, fat: 0 };
 
       for (const { type } of nonPinnedTypes) {
@@ -1101,10 +1125,10 @@ export default function PlannerPage() {
         if (pool.length === 0) continue;
 
         const mealTarget = {
-          cal:  perDayBudget.cal  * MEAL_SHARES[type],
-          pro:  perDayBudget.pro  * MEAL_SHARES[type],
-          carb: perDayBudget.carb * MEAL_SHARES[type],
-          fat:  perDayBudget.fat  * MEAL_SHARES[type],
+          cal:  perDayBudget.cal  * SLOT_SHARES[type],
+          pro:  perDayBudget.pro  * SLOT_SHARES[type],
+          carb: perDayBudget.carb * SLOT_SHARES[type],
+          fat:  perDayBudget.fat  * SLOT_SHARES[type],
         };
 
         const recipe = pickAtStep(pool, mealTarget, usedIds, slotCounter++);
@@ -1117,7 +1141,7 @@ export default function PlannerPage() {
         dayActual.fat  += recipe.macros.fat;
       }
 
-      dayMealPicks.push(dayPicks as Record<MealType, Recipe>);
+      dayMealPicks.push(dayPicks);
 
       // Subtract this day's actuals from the remaining budget
       dayBudgetRemaining.cal  -= dayActual.cal;
@@ -1134,7 +1158,7 @@ export default function PlannerPage() {
         const newMeals = { ...day.meals };
 
         // Apply pinned (sameForAll) recipes to day 0 only
-        for (const { type } of MEAL_LABELS) {
+        for (const { type } of SLOT_LABELS) {
           if (!sameForAll[type]) continue;
           if (di !== 0) continue;
           const pinned = pinnedRecipes[type];
@@ -1156,8 +1180,9 @@ export default function PlannerPage() {
   }
 
   /**
-   * Rebalance a single day: swap each non-locked meal to the recipe whose macros
-   * best match per-meal targets (using 25/35/40% breakfast/lunch/dinner split).
+   * Rebalance a single day: swap each non-locked slot to the recipe whose macros
+   * best match per-slot targets (20% breakfast · 10% each snack · 30% lunch ·
+   * 30% dinner) — snacks participate so daily macros can actually be hit.
    *
    * "Same for all" handling:
    *   - If sameForAll[type] is on, the meal is "pinned" — day 0 holds the master
@@ -1170,17 +1195,10 @@ export default function PlannerPage() {
     const combined = buildCombinedPool();
     const dailyCal = derivedCalories(kitchenGoals.macros);
 
-    // Meal-weighted calorie/macro targets (25% breakfast · 35% lunch · 40% dinner)
-    const MEAL_SHARES: Record<MealType, number> = {
-      breakfast: 0.25,
-      lunch:     0.35,
-      dinner:    0.40,
-    };
-
     const step = rebalanceStepRef.current;
 
-    function scoreFn(r: Recipe, type: MealType, usedIds: Set<string>): number {
-      const share = MEAL_SHARES[type];
+    function scoreFn(r: Recipe, type: SlotKey, usedIds: Set<string>): number {
+      const share = SLOT_SHARES[type];
       const t = {
         cal:  dailyCal                    * share,
         pro:  kitchenGoals.macros.protein * share,
@@ -1196,14 +1214,14 @@ export default function PlannerPage() {
            + varietyPenalty;
     }
 
-    // Pick recipe at (step + slotIndex) rank for each meal type
+    // Pick recipe at (step + slotIndex) rank for each slot type
     const usedIds = new Set<string>();
-    const picks = {} as Record<MealType, Recipe | null>;
+    const picks = {} as Record<SlotKey, Recipe | null>;
     let slotCounter = 0;
 
-    for (const { type } of MEAL_LABELS) {
+    for (const { type } of SLOT_LABELS) {
       const base = applyKitchenFilters(
-        combined.filter((r) => !r.isCheatDay && r.mealType.includes(type))
+        combined.filter((r) => !r.isCheatDay && r.mealType.includes(slotRecipeType(type)))
       );
       if (base.length === 0) { picks[type] = null; continue; }
 
@@ -1218,7 +1236,7 @@ export default function PlannerPage() {
       ...prev,
       days: prev.days.map((day, i) => {
         const newMeals = { ...day.meals };
-        for (const { type } of MEAL_LABELS) {
+        for (const { type } of SLOT_LABELS) {
           const targetIdx = sameForAll[type] ? 0 : dayIndex;
           if (i !== targetIdx) continue;
           if (picks[type]) newMeals[type] = { recipe: picks[type]!, servings: day.meals[type].servings ?? defaultServings };
@@ -1235,9 +1253,9 @@ export default function PlannerPage() {
   const pickerCurrentRecipe =
     pickerTarget && pickerDay ? pickerDay.meals[pickerTarget.mealType].recipe : null;
 
-  // Per-day effective macros (respects sameForAll display logic)
+  // Per-day effective macros (respects sameForAll display logic; includes snacks)
   function getDayMacros(dayIndex: number): DayMacros {
-    return MEAL_LABELS.reduce(
+    return SLOT_LABELS.reduce(
       (acc, { type }) => {
         const r = sameForAll[type]
           ? plan.days[0].meals[type].recipe
@@ -1256,19 +1274,13 @@ export default function PlannerPage() {
 
   const filledSlots = plan.days.reduce(
     (sum, d) =>
-      sum +
-      (d.meals.breakfast.recipe ? 1 : 0) +
-      (d.meals.lunch.recipe ? 1 : 0) +
-      (d.meals.dinner.recipe ? 1 : 0),
+      sum + SLOT_LABELS.reduce((s, { type }) => s + (d.meals[type].recipe ? 1 : 0), 0),
     0
   );
-  const totalSlots = 7 * 3;
+  const totalSlots = 7 * SLOT_LABELS.length;
   const cheatMealCount = plan.days.reduce(
     (sum, d) =>
-      sum +
-      (d.meals.breakfast.recipe?.isCheatDay ? 1 : 0) +
-      (d.meals.lunch.recipe?.isCheatDay ? 1 : 0) +
-      (d.meals.dinner.recipe?.isCheatDay ? 1 : 0),
+      sum + SLOT_LABELS.reduce((s, { type }) => s + (d.meals[type].recipe?.isCheatDay ? 1 : 0), 0),
     0
   );
 
@@ -1360,7 +1372,7 @@ export default function PlannerPage() {
 
         {/* Same-for-all toggles */}
         <div className="flex flex-wrap gap-2 mb-5">
-          {MEAL_LABELS.map(({ type, emoji, label }) => (
+          {SLOT_LABELS.map(({ type, emoji, label }) => (
             <button
               key={type}
               onClick={() => toggleSameForAll(type)}
@@ -1407,11 +1419,11 @@ export default function PlannerPage() {
               })}
             </div>
 
-            {/* Meal rows */}
-            {MEAL_LABELS.map(({ type, emoji, label }) => (
+            {/* Meal + snack rows */}
+            {SLOT_LABELS.map(({ type, emoji, label, isSnack }) => (
               <div key={type} className="grid grid-cols-[72px_repeat(7,1fr)] gap-2 mb-2">
                 <div className="flex flex-col items-center justify-center gap-1 py-1">
-                  <span className="text-lg">{emoji}</span>
+                  <span className={isSnack ? "text-base" : "text-lg"}>{emoji}</span>
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</span>
                   {sameForAll[type] && (
                     <span className="text-[9px] text-primary font-medium bg-primary/10 px-1 rounded-full">Linked</span>
@@ -1428,6 +1440,7 @@ export default function PlannerPage() {
                       <MealSlotCard
                         recipe={effectiveRecipe}
                         servings={effectiveServings}
+                        showCheat={!isSnack}
                         onOpen={() => openPicker(effectiveDayIdx, type)}
                         onPreview={(recipe) => openPreview(recipe, effectiveDayIdx, type)}
                         onRandom={() => assignRandomRecipe(effectiveDayIdx, type)}

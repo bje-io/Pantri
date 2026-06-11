@@ -5,14 +5,15 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ALL_RECIPES, type MealType, type Recipe } from "@/lib/meal-data";
+import { ALL_RECIPES, type RecipeMealType, type Recipe } from "@/lib/meal-data";
 import { loadCustomRecipes, loadRecipeTags, saveRecipeTags } from "@/lib/local-store";
 
-const MEAL_FILTERS: { type: MealType | "all"; label: string; emoji: string }[] = [
+const MEAL_FILTERS: { type: RecipeMealType | "all"; label: string; emoji: string }[] = [
   { type: "all", label: "All", emoji: "🍽️" },
   { type: "breakfast", label: "Breakfast", emoji: "🌅" },
   { type: "lunch", label: "Lunch", emoji: "☀️" },
   { type: "dinner", label: "Dinner", emoji: "🌙" },
+  { type: "snack", label: "Snacks", emoji: "🥜" },
 ];
 
 const CUISINE_FILTERS = [
@@ -268,10 +269,11 @@ function AddToWeekMenu({ recipe }: { recipe: Recipe }) {
   );
 }
 
-const MEAL_TYPE_OPTIONS: { type: MealType; emoji: string; label: string }[] = [
+const MEAL_TYPE_OPTIONS: { type: RecipeMealType; emoji: string; label: string }[] = [
   { type: "breakfast", emoji: "🌅", label: "Breakfast" },
   { type: "lunch",     emoji: "☀️", label: "Lunch" },
   { type: "dinner",    emoji: "🌙", label: "Dinner" },
+  { type: "snack",     emoji: "🥜", label: "Snack" },
 ];
 
 // ── Recipe Card ───────────────────────────────────────────────────
@@ -285,11 +287,11 @@ function RecipeCard({
   onToggleMealType,
 }: {
   recipe: Recipe;
-  activeMealTypes: MealType[];
+  activeMealTypes: RecipeMealType[];
   saved: boolean;
   onSave: () => void;
   onPreview: () => void;
-  onToggleMealType: (t: MealType) => void;
+  onToggleMealType: (t: RecipeMealType) => void;
 }) {
   const [labelOpen, setLabelOpen] = useState(false);
   const totalTime = recipe.prepTime + recipe.cookTime;
@@ -441,7 +443,7 @@ function RecipeCard({
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function RecipesPage() {
-  const [mealFilter, setMealFilter] = useState<MealType | "all">("all");
+  const [mealFilter, setMealFilter] = useState<RecipeMealType | "all">("all");
   const [cuisineFilter, setCuisineFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [saved, setSaved] = useState<Set<string>>(new Set());
@@ -451,7 +453,7 @@ export default function RecipesPage() {
   const [customRecipes] = useState<Recipe[]>(() => loadCustomRecipes());
 
   // Load user-set meal-type tags (overrides / additions per recipe id)
-  const [tagOverrides, setTagOverrides] = useState<Record<string, MealType[]>>(
+  const [tagOverrides, setTagOverrides] = useState<Record<string, RecipeMealType[]>>(
     () => loadRecipeTags()
   );
 
@@ -461,7 +463,7 @@ export default function RecipesPage() {
   const allRecipes = [...uniqueCustom, ...ALL_RECIPES];
 
   // Resolve the effective meal types for a recipe (override wins if set)
-  function effectiveMealTypes(r: Recipe): MealType[] {
+  function effectiveMealTypes(r: Recipe): RecipeMealType[] {
     return tagOverrides[r.id] ?? r.mealType;
   }
 
@@ -473,7 +475,7 @@ export default function RecipesPage() {
     });
   }
 
-  function toggleMealType(id: string, type: MealType) {
+  function toggleMealType(id: string, type: RecipeMealType) {
     setTagOverrides((prev) => {
       const current = prev[id] ?? allRecipes.find((r) => r.id === id)?.mealType ?? [];
       const next = current.includes(type)

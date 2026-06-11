@@ -267,9 +267,12 @@ export default function GeneratePage() {
         day: dayName,
         isCheatDay: false,
         meals: {
-          breakfast: { recipe: recipesMap[`${di}-breakfast`] ?? null },
-          lunch:     { recipe: recipesMap[`${di}-lunch`]     ?? null },
-          dinner:    { recipe: recipesMap[`${di}-dinner`]    ?? null },
+          breakfast:      { recipe: recipesMap[`${di}-breakfast`] ?? null },
+          // Sage week generation covers the 3 main meals; snack slots start empty
+          morningSnack:   { recipe: null },
+          lunch:          { recipe: recipesMap[`${di}-lunch`]     ?? null },
+          afternoonSnack: { recipe: null },
+          dinner:         { recipe: recipesMap[`${di}-dinner`]    ?? null },
         },
       })),
     };

@@ -3,7 +3,8 @@
  * Handles week plans, AI-generated recipes, recipe meal-type tags, and kitchen goals.
  */
 
-import type { MealType, Recipe, WeekPlan } from "./meal-data";
+import type { RecipeMealType, Recipe, WeekPlan } from "./meal-data";
+import { normalizeWeekPlan } from "./meal-data";
 
 // ── Kitchen goals ─────────────────────────────────────────────────
 // macros are stored in GRAMS. Calories are always derived:
@@ -74,7 +75,8 @@ export function loadWeekPlan(weekStart: string): WeekPlan | null {
   if (typeof window === "undefined") return null;
   try {
     const stored = localStorage.getItem(planKey(weekStart));
-    return stored ? (JSON.parse(stored) as WeekPlan) : null;
+    // Normalize backfills snack slots on plans saved before snacks existed
+    return stored ? normalizeWeekPlan(JSON.parse(stored) as WeekPlan) : null;
   } catch {
     return null;
   }
@@ -116,17 +118,17 @@ export function saveCustomRecipe(recipe: Recipe) {
 
 const TAGS_KEY = "pantri-recipe-tags";
 
-export function loadRecipeTags(): Record<string, MealType[]> {
+export function loadRecipeTags(): Record<string, RecipeMealType[]> {
   if (typeof window === "undefined") return {};
   try {
     const stored = localStorage.getItem(TAGS_KEY);
-    return stored ? (JSON.parse(stored) as Record<string, MealType[]>) : {};
+    return stored ? (JSON.parse(stored) as Record<string, RecipeMealType[]>) : {};
   } catch {
     return {};
   }
 }
 
-export function saveRecipeTags(id: string, mealTypes: MealType[]) {
+export function saveRecipeTags(id: string, mealTypes: RecipeMealType[]) {
   if (typeof window === "undefined") return;
   try {
     const all = loadRecipeTags();
