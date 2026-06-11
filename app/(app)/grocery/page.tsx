@@ -475,7 +475,7 @@ export default function GroceryPage() {
 
       {/* Week tabs */}
       <div className="flex gap-1 rounded-xl border border-border bg-muted/20 p-1 mb-4">
-        {([-1, 0, 1, 2] as const).map((offset) => (
+        {([0, 1, 2, 3] as const).map((offset) => (
           <button
             key={offset}
             onClick={() => setWeekOffset(offset)}
@@ -484,7 +484,7 @@ export default function GroceryPage() {
               weekOffset === offset ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {offset === -1 ? "Last" : offset === 0 ? "This week" : offset === 1 ? "Next week" : "+2 wks"}
+            {offset === 0 ? "This week" : offset === 1 ? "Next week" : `+${offset} weeks`}
             <span className="block text-[10px] font-normal opacity-70">{getWeekLabel(offset)}</span>
           </button>
         ))}
