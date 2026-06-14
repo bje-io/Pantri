@@ -8,12 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { ALL_RECIPES, type RecipeMealType, type Recipe } from "@/lib/meal-data";
 import { loadCustomRecipes, loadRecipeTags, saveRecipeTags } from "@/lib/local-store";
 
-const MEAL_FILTERS: { type: RecipeMealType | "all"; label: string; emoji: string }[] = [
+type MealFilter = RecipeMealType | "all" | "cheat";
+
+const MEAL_FILTERS: { type: MealFilter; label: string; emoji: string }[] = [
   { type: "all", label: "All", emoji: "🍽️" },
   { type: "breakfast", label: "Breakfast", emoji: "🌅" },
   { type: "lunch", label: "Lunch", emoji: "☀️" },
   { type: "dinner", label: "Dinner", emoji: "🌙" },
   { type: "snack", label: "Snacks", emoji: "🥜" },
+  { type: "cheat", label: "Cheat meals", emoji: "🍕" },
 ];
 
 const CUISINE_FILTERS = [
@@ -443,7 +446,7 @@ function RecipeCard({
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function RecipesPage() {
-  const [mealFilter, setMealFilter] = useState<RecipeMealType | "all">("all");
+  const [mealFilter, setMealFilter] = useState<MealFilter>("all");
   const [cuisineFilter, setCuisineFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [saved, setSaved] = useState<Set<string>>(new Set());
@@ -488,7 +491,11 @@ export default function RecipesPage() {
 
   const filtered = allRecipes.filter((r) => {
     const mt = effectiveMealTypes(r);
-    if (mealFilter !== "all" && !mt.includes(mealFilter)) return false;
+    if (mealFilter === "cheat") {
+      if (!r.isCheatDay) return false;
+    } else if (mealFilter !== "all" && !mt.includes(mealFilter)) {
+      return false;
+    }
     if (cuisineFilter !== "All" && r.cuisine !== cuisineFilter) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()))
       return false;
