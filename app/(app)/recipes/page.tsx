@@ -23,6 +23,14 @@ const CUISINE_FILTERS = [
   "All", "Japanese", "Mexican", "Greek", "Thai", "Indian", "American", "Mediterranean",
 ];
 
+// Total time = prepTime + cookTime. `max` of null = no upper bound.
+const TIME_FILTERS: { id: string; label: string; emoji: string; max: number | null }[] = [
+  { id: "all",   label: "Any time",   emoji: "⏱️", max: null },
+  { id: "15",    label: "≤ 15 min",   emoji: "⚡", max: 15 },
+  { id: "30",    label: "≤ 30 min",   emoji: "🕐", max: 30 },
+  { id: "60",    label: "≤ 60 min",   emoji: "🕑", max: 60 },
+];
+
 // ── Recipe Preview Modal ──────────────────────────────────────────
 
 function RecipePreviewModal({
@@ -448,6 +456,7 @@ function RecipeCard({
 export default function RecipesPage() {
   const [mealFilter, setMealFilter] = useState<MealFilter>("all");
   const [cuisineFilter, setCuisineFilter] = useState("All");
+  const [timeFilter, setTimeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [previewRecipe, setPreviewRecipe] = useState<Recipe | null>(null);
@@ -497,6 +506,8 @@ export default function RecipesPage() {
       return false;
     }
     if (cuisineFilter !== "All" && r.cuisine !== cuisineFilter) return false;
+    const timeMax = TIME_FILTERS.find((t) => t.id === timeFilter)?.max ?? null;
+    if (timeMax !== null && r.prepTime + r.cookTime > timeMax) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()))
       return false;
     return true;
@@ -572,7 +583,7 @@ export default function RecipesPage() {
         </div>
 
         {/* Cuisine filter */}
-        <div className="flex gap-2 mb-8 overflow-x-auto pb-1">
+        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
           {CUISINE_FILTERS.map((c) => (
             <button
               key={c}
@@ -585,6 +596,25 @@ export default function RecipesPage() {
               )}
             >
               {c}
+            </button>
+          ))}
+        </div>
+
+        {/* Time filter — total prep + cook time */}
+        <div className="flex gap-2 mb-8 overflow-x-auto pb-1">
+          {TIME_FILTERS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTimeFilter(t.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border shrink-0 transition-all",
+                timeFilter === t.id
+                  ? "bg-primary/10 text-primary border-primary/30"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/30"
+              )}
+            >
+              <span>{t.emoji}</span>
+              {t.label}
             </button>
           ))}
         </div>
